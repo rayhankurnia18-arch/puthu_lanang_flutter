@@ -70,15 +70,11 @@ class AppState extends ChangeNotifier {
     String p,
     String pass,
   ) async {
-    final prefs = await SharedPreferences.getInstance();
-
     final cleanName = name.trim();
     final cleanPhone = p.trim();
     final cleanPassword = pass.trim();
 
-    if (cleanName.isEmpty ||
-        cleanPhone.isEmpty ||
-        cleanPassword.isEmpty) {
+    if (cleanName.isEmpty || cleanPhone.isEmpty || cleanPassword.isEmpty) {
       throw Exception('Lengkapi semua data terlebih dahulu.');
     }
 
@@ -86,19 +82,13 @@ class AppState extends ChangeNotifier {
       throw Exception('Password minimal 6 karakter.');
     }
 
-    final existingPhone = prefs.getString('account_phone');
-
-    if (existingPhone == cleanPhone) {
-      throw Exception(
-        'Nomor WhatsApp sudah terdaftar. Silakan masuk.',
-      );
-    }
-
-    await prefs.setString('account_name', cleanName);
-    await prefs.setString('account_phone', cleanPhone);
-    await prefs.setString('account_password', cleanPassword);
-
-    await login(cleanPhone, cleanPassword);
+    // Register ke MySQL melalui backend (sudah dilakukan di verify-otp)
+    // Langsung simpan sesi login ke SharedPreferences
+    await _saveSession(
+      name: cleanName,
+      phone: cleanPhone,
+      token: 'server-token-$cleanPhone',
+    );
   }
 
   // =========================
@@ -109,43 +99,38 @@ class AppState extends ChangeNotifier {
     String p,
     String pass,
   ) async {
-    final prefs = await SharedPreferences.getInstance();
-
     final cleanPhone = p.trim();
     final cleanPassword = pass.trim();
 
     if (cleanPhone.isEmpty || cleanPassword.isEmpty) {
-      throw Exception(
-        'Nomor WhatsApp dan password wajib diisi.',
-      );
+      throw Exception('Nomor WhatsApp dan password wajib diisi.');
     }
 
-    final savedPhone = prefs.getString('account_phone');
-    final savedPassword = prefs.getString('account_password');
-    final savedName = prefs.getString('account_name');
+    // Login ke MySQL melalui backend
+    final result = await ApiService.login(cleanPhone, cleanPassword);
+    final data = result['data'] as Map<String, dynamic>;
 
-    if (savedPhone == null || savedPassword == null) {
-      throw Exception(
-        'Akun belum terdaftar. Silakan daftar terlebih dahulu.',
-      );
-    }
+    await _saveSession(
+      name: data['nama'] as String? ?? 'Pecinta Kuliner',
+      phone: cleanPhone,
+      token: data['token'] as String? ?? 'server-token-$cleanPhone',
+    );
+  }
 
-    if (cleanPhone != savedPhone) {
-      throw Exception('Nomor WhatsApp tidak ditemukan.');
-    }
+  // Helper: simpan sesi ke SharedPreferences & update state
+  Future<void> _saveSession({
+    required String name,
+    required String phone,
+    required String token,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
 
-    if (cleanPassword != savedPassword) {
-      throw Exception('Password salah.');
-    }
+    this.token = token;
+    userName = name;
+    this.phone = phone;
 
-    userName = savedName ?? 'Pecinta Kuliner';
-    phone = savedPhone;
-
-    token = 'local-token-$savedPhone';
-
-    // Simpan data sesi beserta timestamp login untuk durasi 30 hari
-    await prefs.setString('token', token!);
-    await prefs.setString('name', userName);
+    await prefs.setString('token', token);
+    await prefs.setString('name', name);
     await prefs.setString('phone', phone);
     await prefs.setInt('login_timestamp', DateTime.now().millisecondsSinceEpoch);
 

@@ -24,7 +24,7 @@ class _AuthPageState extends State<AuthPage> {
 
   bool register = false;
   bool isOtpStep = false;
-  bool isForgotStep = false; // State khusus untuk mode Lupa Password
+  bool isForgotStep = false;
   bool busy = false;
   String? error;
 
@@ -38,7 +38,7 @@ class _AuthPageState extends State<AuthPage> {
     super.dispose();
   }
 
-  // Langkah 1: Kirim OTP (Support Register, Login, & Forgot)
+  // Tombol Aksi Utama
   Future<void> submit() async {
     FocusScope.of(context).unfocus();
     setState(() {
@@ -55,28 +55,41 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
 
-    if (!isForgotStep && pass.text.trim().length < 6) {
-      setState(() { error = 'Password minimal 6 karakter.'; });
-      return;
-    }
-
-    if (register && name.text.trim().isEmpty) {
-      setState(() { error = 'Nama lengkap wajib diisi.'; });
-      return;
-    }
-
     setState(() { busy = true; });
 
     try {
-      String type = register ? 'register' : (isForgotStep ? 'forgot' : 'login');
-      
-      // Panggil API untuk mengirim OTP ke WhatsApp dengan tipe yang sesuai
-      await ApiService.sendOtp(phone.text.trim(), type: type);
+      // 1. JIKA BUKAN LUPA PASSWORD DAN BUKAN REGISTER -> Langsung Login ke Backend
+      if (!isForgotStep && !register) {
+        await widget.state.login(phone.text.trim(), pass.text.trim());
 
-      if (!mounted) return;
-      setState(() {
-        isOtpStep = true;
-      });
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        return;
+      }
+
+      // 2. JIKA SEDANG DAFTAR AKUN BARU
+      if (register) {
+        if (name.text.trim().isEmpty) {
+          setState(() { 
+            error = 'Nama lengkap wajib diisi.'; 
+            busy = false;
+          });
+          return;
+        }
+        await ApiService.sendOtp(phone.text.trim(), type: 'register');
+        if (!mounted) return;
+        setState(() { isOtpStep = true; });
+        return;
+      }
+
+      // 3. JIKA SEDANG LUPA PASSWORD
+      if (isForgotStep) {
+        await ApiService.sendOtp(phone.text.trim(), type: 'forgot');
+        if (!mounted) return;
+        setState(() { isOtpStep = true; });
+        return;
+      }
+
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -87,7 +100,7 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
-  // Langkah 2: Verifikasi OTP & Selesaikan Login/Register
+  // Langkah 2: Verifikasi OTP (Untuk Register & Lupa Password)
   Future<void> verifyAndSubmit() async {
     FocusScope.of(context).unfocus();
     setState(() { error = null; });
@@ -106,7 +119,6 @@ class _AuthPageState extends State<AuthPage> {
 
     try {
       if (isForgotStep) {
-        // Eksekusi API Lupa Password
         await ApiService.forgotPassword(
           phone: phone.text.trim(),
           otpCode: otpCode.text.trim(),
@@ -130,15 +142,13 @@ class _AuthPageState extends State<AuthPage> {
       await ApiService.verifyOtp(
         phone: phone.text.trim(),
         otpCode: otpCode.text.trim(),
-        name: register ? name.text.trim() : null,
+        name: name.text.trim(),
         password: pass.text.trim(),
-        isRegister: register,
+        isRegister: true,
       );
 
       if (register) {
         await widget.state.register(name.text.trim(), phone.text.trim(), pass.text.trim());
-      } else {
-        await widget.state.login(phone.text.trim(), pass.text.trim());
       }
 
       if (!mounted) return;
@@ -273,7 +283,7 @@ class _AuthPageState extends State<AuthPage> {
                     ),
                     child: Column(
                       children: [
-                        // Tab Switcher (Hanya tampil jika bukan di step OTP / Forgot)
+                        // Tab Switcher
                         if (!isOtpStep && !isForgotStep) ...[
                           Container(
                             padding: const EdgeInsets.all(4),
@@ -354,7 +364,7 @@ class _AuthPageState extends State<AuthPage> {
                             controller: phone,
                             icon: Icons.phone_outlined,
                             keyboardType: TextInputType.phone,
-                            hint: 'Nomor WhatsApp Anda (Cth: 08123456789)',
+                            hint: 'Nomor WhatsApp Anda',
                           ),
                           if (!isForgotStep)
                             _field(
@@ -362,10 +372,10 @@ class _AuthPageState extends State<AuthPage> {
                               controller: pass,
                               icon: Icons.lock_outline,
                               obscure: true,
-                              hint: 'Kata Sandi Anda (min. 6 karakter)',
+                              hint: 'Kata Sandi Anda',
                             ),
                           
-                          // Tombol Lupa Password (Hanya muncul di tab Masuk Akun)
+                          // Tombol Lupa Password
                           if (!register)
                             Align(
                               alignment: Alignment.centerRight,
@@ -419,8 +429,8 @@ class _AuthPageState extends State<AuthPage> {
                                   busy
                                       ? 'Memproses...'
                                       : isOtpStep
-                                          ? (isForgotStep ? 'Reset Password' : 'Verifikasi & Masuk')
-                                          : (isForgotStep ? 'Kirim OTP Reset' : 'Kirim Kode OTP'),
+                                          ? (isForgotStep ? 'Reset Password' : 'Verifikasi & Daftar')
+                                          : (!register ? 'Masuk Sekarang' : 'Kirim Kode OTP'),
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                 ),
                                 const SizedBox(width: 8),

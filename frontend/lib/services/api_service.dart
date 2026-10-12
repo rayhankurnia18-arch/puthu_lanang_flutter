@@ -3,14 +3,12 @@ import 'package:http/http.dart' as http;
 import '../models/menu_item.dart';
 
 class ApiService {
-  // Gunakan port 3000 sesuai server backend kita
   static const String baseUrl = 'http://localhost:3000/api';
 
   static Future<List<MenuItem>> getMenu() async {
     final r = await http.get(Uri.parse('$baseUrl/menu')).timeout(const Duration(seconds: 8));
     if (r.statusCode != 200) throw Exception('Gagal mengambil menu');
     
-    // Backend mengembalikan list langsung
     final List<dynamic> data = jsonDecode(r.body) as List<dynamic>;
     return data.map((e) => MenuItem.fromJson(e as Map<String, dynamic>)).toList();
   }
@@ -21,8 +19,11 @@ class ApiService {
       headers: {'Content-Type': 'application/json'}, 
       body: jsonEncode({'no_whatsapp': phone, 'password': password})
     );
+    
     final body = jsonDecode(r.body) as Map<String, dynamic>;
-    if (r.statusCode >= 400) throw Exception(body['message'] ?? 'Login gagal');
+    if (r.statusCode >= 400) {
+      throw Exception(body['message'] ?? 'Login gagal');
+    }
     return body;
   }
 
@@ -37,8 +38,7 @@ class ApiService {
     return body;
   }
 
-  // --- FUNGSI OTP & LUPA PASSWORD UNTUK FONNTE ---
-  static Future<Map<String, dynamic>> sendOtp(String phone, {String type = 'login'}) async {
+  static Future<Map<String, dynamic>> sendOtp(String phone, {String type = 'register'}) async {
     final r = await http.post(
       Uri.parse('$baseUrl/auth/send-otp'),
       headers: {'Content-Type': 'application/json'},
@@ -93,7 +93,6 @@ class ApiService {
     if (r.statusCode >= 400) throw Exception(body['message'] ?? 'Gagal mengubah password');
     return body;
   }
-  // ----------------------------------------------
 
   static Future<Map<String, dynamic>> createOrder({
     required String name, 

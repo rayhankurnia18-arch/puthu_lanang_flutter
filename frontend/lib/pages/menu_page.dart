@@ -3,7 +3,7 @@ import '../main.dart';
 import '../state/app_state.dart';
 import '../widgets/menu_card.dart';
 import '../widgets/app_card.dart';
-import 'payment_page.dart';
+import 'takeaway_page.dart';
 
 class MenuPage extends StatefulWidget {
   final AppState state;
@@ -82,23 +82,11 @@ class _MenuPageState extends State<MenuPage> {
                   ),
                   ElevatedButton(
                     onPressed: () {
-                      final cartItemsList = state.cart.map((cartItem) {
-                        return {
-                          'id': cartItem.item.id,
-                          'nama': cartItem.item.name,
-                          'harga': cartItem.item.price,
-                          'qty': cartItem.quantity,
-                        };
-                      }).toList();
-
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PaymentPage(
+                          builder: (_) => TakeawayPage(
                             state: state,
-                            cartItems: cartItemsList,
-                            totalPrice: state.totalPrice,
-                            notes: 'Tanpa catatan',
                           ),
                         ),
                       );
