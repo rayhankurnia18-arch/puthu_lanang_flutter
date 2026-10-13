@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../main.dart';
 import '../state/app_state.dart';
 import '../widgets/app_card.dart';
+import 'orders_page.dart';
 
 class ProfilePage extends StatefulWidget {
   final AppState state;
@@ -61,7 +62,9 @@ class _ProfilePageState extends State<ProfilePage> {
         backgroundColor: brown2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(title, style: const TextStyle(color: cream, fontSize: 16, fontWeight: FontWeight.bold)),
-        content: Text(content, style: const TextStyle(color: muted, fontSize: 13, height: 1.4)),
+        content: SingleChildScrollView(
+          child: Text(content, style: const TextStyle(color: muted, fontSize: 13, height: 1.4)),
+        ),
         actions: [
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: green),
@@ -235,10 +238,11 @@ class _ProfilePageState extends State<ProfilePage> {
               _row(
                 Icons.history,
                 'Riwayat Transaksi',
-                () => _showInfoDialog(
+                () => Navigator.push(
                   context,
-                  'Riwayat Transaksi',
-                  'Belum ada transaksi tersimpan. Pesanan jajanan tradisional Puthu Lanang yang telah selesai akan muncul di sini.',
+                  MaterialPageRoute(
+                    builder: (_) => OrdersPage(state: widget.state),
+                  ),
                 ),
               ),
               _row(
@@ -247,7 +251,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 () => _showInfoDialog(
                   context,
                   'Kupon Promo Heritage 1935',
-                  'Anda memiliki 1 Kupon Spesial Diskon 20% untuk pembelian Paket Campur dan Besek Hampers.',
+                  'Kode: PUTHUHEMAT10\n\nDiskon Spesial VIP Member\nPotongan Rp 10.000 dengan minimal transaksi Rp 50.000.',
                 ),
               ),
               _row(

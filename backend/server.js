@@ -1,7 +1,7 @@
 const express = require('express');
-const cors    = require('cors');
-const mysql   = require('mysql2');
-const https   = require('https');
+const cors = require('cors');
+const mysql = require('mysql2');
+const https = require('https');
 
 const app = express();
 app.use(express.json());
@@ -16,13 +16,13 @@ const DEV_MODE = process.env.DEV_MODE !== 'false';
 // Menggunakan pool agar koneksi tahan terhadap timeout & restart
 // =============================================================
 const db = mysql.createPool({
-  host              : 'localhost',
-  user              : 'root',
-  password          : '',
-  database          : 'puthu_lanang_db',
+  host: 'localhost',
+  user: 'root',
+  password: '',
+  database: 'puthu_lanang_db',
   waitForConnections: true,
-  connectionLimit   : 10,
-  queueLimit        : 0,
+  connectionLimit: 10,
+  queueLimit: 0,
 });
 
 // Uji koneksi saat server pertama kali berjalan
@@ -34,7 +34,26 @@ db.getConnection((err, connection) => {
   }
   console.log('✅ Berhasil terhubung ke database MySQL puthu_lanang_db.');
   connection.release();
+  ensureOrdersSchema();
 });
+
+// Pastikan tabel `orders` punya kolom `summary_items` (ringkasan item pesanan)
+// agar riwayat bisa menampilkan isi pesanan. Aman dijalankan berulang kali.
+function ensureOrdersSchema() {
+  const checkColumn = `
+    SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'summary_items'
+  `;
+  db.query(checkColumn, (err, rows) => {
+    if (err) return console.error('❌ Gagal memeriksa skema tabel orders:', err.message);
+    if (rows[0].n > 0) return;
+
+    db.query('ALTER TABLE orders ADD COLUMN summary_items TEXT NULL AFTER total', (err2) => {
+      if (err2) return console.error('❌ Gagal menambah kolom summary_items:', err2.message);
+      console.log('✅ Kolom orders.summary_items berhasil ditambahkan.');
+    });
+  });
+}
 
 // =============================================================
 // HELPER: Kirim pesan WhatsApp via Fonnte API
@@ -42,19 +61,19 @@ db.getConnection((err, connection) => {
 function sendFonnteMessage(targetPhone, message) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify({
-      target     : targetPhone,
-      message    : message,
+      target: targetPhone,
+      message: message,
       countryCode: '62',
     });
 
     const options = {
       hostname: 'api.fonnte.com',
-      port    : 443,
-      path    : '/send',
-      method  : 'POST',
-      headers : {
-        'Authorization' : 'x97GBmRqfzqDm8mSVd1U', // ← Ganti dengan token Fonnte Anda
-        'Content-Type'  : 'application/json',
+      port: 443,
+      path: '/send',
+      method: 'POST',
+      headers: {
+        'Authorization': 'x97GBmRqfzqDm8mSVd1U', // ← Ganti dengan token Fonnte Anda
+        'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(data),
       },
     };
@@ -87,6 +106,7 @@ app.get('/', (req, res) => {
     version: '2.0.0',
     endpoints: [
       'GET  /api/menu',
+      'GET  /api/orders?phone=<no_whatsapp>',
       'POST /api/orders',
       'POST /api/auth/user-login',
       'POST /api/auth/user-register',
@@ -121,44 +141,78 @@ app.post('/api/orders', (req, res) => {
     return res.status(400).json({ error: 'Field name, phone, dan total wajib diisi.' });
   }
 
-  const qrToken   = 'PL-2026-' + Math.floor(10000 + Math.random() * 90000);
+  const qrToken = 'PL-2026-' + Math.floor(10000 + Math.random() * 90000);
   const antreanNo = Math.floor(50 + Math.random() * 50);
 
+  const summaryItems =
+    Array.isArray(items) && items.length > 0
+      ? items.map((it) => `${it.quantity || it.qty || 1}x ${it.nama || it.name || 'Puthu'}`).join(', ')
+      : '1x Puthu / Paket Pilihan';
+
   const query = `
-    INSERT INTO orders (name, phone, pickup_time, pickup_date, total, notes, qr_token, antrean)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO orders (name, phone, pickup_time, pickup_date, total, notes, qr_token, antrean, summary_items)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
 
   db.query(
     query,
-    [name, phone, pickupTime || '-', pickupDate || 'Hari Ini', total, notes || '', qrToken, antreanNo],
+    [name, phone, pickupTime || '-', pickupDate || 'Hari Ini', total, notes || '', qrToken, antreanNo, summaryItems],
     (err, result) => {
       if (err) return res.status(500).json({ error: err.message });
-
-      const summaryItems =
-        Array.isArray(items) && items.length > 0
-          ? items.map((it) => `${it.quantity || it.qty || 1}x ${it.nama || it.name || 'Puthu'}`).join(', ')
-          : '1x Puthu / Paket Pilihan';
 
       res.json({
         message: 'Pesanan berhasil dibuat',
         data: {
-          id           : 'ORD-' + result.insertId,
+          id: 'ORD-' + result.insertId,
           qr_code_token: qrToken,
-          antrean      : antreanNo,
-          status       : 'Sedang Dikukus',
-          total_harga  : total,
+          antrean: antreanNo,
+          status: 'Sedang Dikukus',
+          total_harga: total,
           name,
           phone,
-          pickup_time  : pickupTime || '-',
-          pickup_date  : pickupDate || 'Hari Ini',
-          notes        : notes || '',
+          pickup_time: pickupTime || '-',
+          pickup_date: pickupDate || 'Hari Ini',
+          notes: notes || '',
           summary_items: summaryItems,
-          items        : items || [],
+          items: items || [],
         },
       });
     }
   );
+});
+
+// =============================================================
+// GET /api/orders?phone=<no_whatsapp> — Riwayat pesanan user dari database
+// Urut dari yang terbaru. Response: { data: [ ...pesanan ] }
+// =============================================================
+app.get('/api/orders', (req, res) => {
+  const phone = (req.query.phone || '').toString().trim();
+
+  if (!phone) {
+    return res.status(400).json({ error: 'Parameter phone wajib diisi.' });
+  }
+
+  const query = `
+    SELECT
+      CONCAT('ORD-', id)                    AS id,
+      qr_token                              AS qr_code_token,
+      antrean,
+      status,
+      total,
+      summary_items,
+      pickup_time,
+      DATE_FORMAT(pickup_date, '%Y-%m-%d')  AS pickup_date,
+      notes,
+      created_at
+    FROM orders
+    WHERE phone = ?
+    ORDER BY created_at DESC, id DESC
+  `;
+
+  db.query(query, [phone], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ data: rows });
+  });
 });
 
 // =============================================================
@@ -184,10 +238,10 @@ app.post('/api/auth/user-login', (req, res) => {
       res.json({
         message: 'Login berhasil',
         data: {
-          id          : user.id,
-          nama        : user.nama,
-          no_whatsapp : user.no_whatsapp,
-          token       : 'server-token-' + user.no_whatsapp,
+          id: user.id,
+          nama: user.nama,
+          no_whatsapp: user.no_whatsapp,
+          token: 'server-token-' + user.no_whatsapp,
         },
       });
     }
@@ -226,10 +280,10 @@ app.post('/api/auth/user-register', (req, res) => {
         res.json({
           message: 'Registrasi berhasil!',
           data: {
-            id          : result.insertId,
+            id: result.insertId,
             nama,
             no_whatsapp,
-            token       : 'server-token-' + no_whatsapp,
+            token: 'server-token-' + no_whatsapp,
           },
         });
       });
@@ -260,7 +314,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
       return res.status(400).json({ message: 'Akun belum terdaftar. Silakan daftar terlebih dahulu.' });
     }
 
-    const otpCode  = Math.floor(1000 + Math.random() * 9000).toString();
+    const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // berlaku 5 menit
 
     // Hapus OTP lama yang belum dipakai untuk nomor ini
@@ -287,9 +341,9 @@ app.post('/api/auth/send-otp', async (req, res) => {
           .catch((apiErr) => console.warn('[OTP FONNTE GAGAL]:', apiErr.message));
 
         return res.json({
-          success : true,
+          success: true,
           otp_code: otpCode,
-          message : 'OTP berhasil dikirim',
+          message: 'OTP berhasil dikirim',
         });
       }
 
@@ -354,10 +408,10 @@ app.post('/api/auth/verify-otp', (req, res) => {
         res.json({
           message: 'Registrasi & Verifikasi Berhasil!',
           data: {
-            id          : result.insertId,
-            nama        : nama || 'Pelanggan',
+            id: result.insertId,
+            nama: nama || 'Pelanggan',
             no_whatsapp,
-            token       : 'server-token-' + no_whatsapp,
+            token: 'server-token-' + no_whatsapp,
           },
         });
       });
@@ -417,37 +471,37 @@ app.post('/api/auth/forgot-password', (req, res) => {
 app.post('/api/payment/create-charge', (req, res) => {
   const { gross_amount, customer_name, customer_phone } = req.body;
 
-  const serverKey  = 'SB-Mid-server-gZRRXn2c7323zgcAPStRVskk'; // ← Ganti dengan Server Key Midtrans Anda
+  const serverKey = 'SB-Mid-server-gZRRXn2c7323zgcAPStRVskk'; // ← Ganti dengan Server Key Midtrans Anda
   const encodedKey = Buffer.from(serverKey + ':').toString('base64');
 
   const payload = JSON.stringify({
     transaction_details: {
-      order_id    : 'PL-TRX-' + Date.now(),
+      order_id: 'PL-TRX-' + Date.now(),
       gross_amount: gross_amount || 18000,
     },
     item_details: [
       {
-        id      : 'ITEM-01',
-        price   : gross_amount || 18000,
+        id: 'ITEM-01',
+        price: gross_amount || 18000,
         quantity: 1,
-        name    : 'Jajanan Tradisional Puthu Lanang',
+        name: 'Jajanan Tradisional Puthu Lanang',
       },
     ],
     customer_details: {
       first_name: customer_name || 'Pelanggan Puthu Lanang',
-      phone     : customer_phone || '088212383828',
+      phone: customer_phone || '088212383828',
     },
   });
 
   const options = {
     hostname: 'app.sandbox.midtrans.com',
-    port    : 443,
-    path    : '/snap/v1/transactions',
-    method  : 'POST',
-    headers : {
-      'Authorization' : 'Basic ' + encodedKey,
-      'Content-Type'  : 'application/json',
-      'Accept'        : 'application/json',
+    port: 443,
+    path: '/snap/v1/transactions',
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + encodedKey,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
       'Content-Length': Buffer.byteLength(payload),
     },
   };
@@ -460,9 +514,9 @@ app.post('/api/payment/create-charge', (req, res) => {
         const json = JSON.parse(body);
         if (json.redirect_url) {
           res.json({
-            message     : 'Midtrans Snap Token Created',
+            message: 'Midtrans Snap Token Created',
             redirect_url: json.redirect_url,
-            token       : json.token,
+            token: json.token,
           });
         } else {
           res.status(400).json({
@@ -489,17 +543,17 @@ app.post('/api/payment/create-charge', (req, res) => {
 // =============================================================
 app.post('/api/ai/queue-estimator', (req, res) => {
   const {
-    outlet   = 'Gerai Pusat Celaket',
-    day      = 'Hari Ini',
+    outlet = 'Gerai Pusat Celaket',
+    day = 'Hari Ini',
     timeSlot = '16:30 - 17:00',
   } = req.body;
 
-  let baseWaitMin   = 8;
-  let baseWaitMax   = 12;
-  let crowdLevel    = 'Ramai Lancar';
-  let crowdColor    = 'gold';
-  let peakPct       = 60;
-  let tips          = 'Slot ideal. Pesanan Anda diprioritaskan hangat saat diambil.';
+  let baseWaitMin = 8;
+  let baseWaitMax = 12;
+  let crowdLevel = 'Ramai Lancar';
+  let crowdColor = 'gold';
+  let peakPct = 60;
+  let tips = 'Slot ideal. Pesanan Anda diprioritaskan hangat saat diambil.';
 
   const isCelaket = outlet.toLowerCase().includes('celaket');
   const isWeekend = ['sabtu', 'minggu', 'jumat'].some((d) => day.toLowerCase().includes(d));
@@ -521,25 +575,25 @@ app.post('/api/ai/queue-estimator', (req, res) => {
   if (!isCelaket) {
     baseWaitMin = Math.max(3, Math.round(baseWaitMin * 0.75));
     baseWaitMax = Math.max(6, Math.round(baseWaitMax * 0.75));
-    peakPct     = Math.round(peakPct * 0.8);
+    peakPct = Math.round(peakPct * 0.8);
   }
 
   if (isWeekend) {
     baseWaitMin += 2;
     baseWaitMax += 3;
-    peakPct      = Math.min(95, peakPct + 15);
+    peakPct = Math.min(95, peakPct + 15);
   }
 
   res.json({
-    status          : 'success',
+    status: 'success',
     outlet, day,
-    time_slot       : timeSlot,
-    crowd_level     : crowdLevel,
-    crowd_color     : crowdColor,
-    estimated_wait  : `~${baseWaitMin} - ${baseWaitMax} Mnt`,
-    wait_time_min   : baseWaitMin,
-    wait_time_max   : baseWaitMax,
-    peak_percentage : peakPct,
+    time_slot: timeSlot,
+    crowd_level: crowdLevel,
+    crowd_color: crowdColor,
+    estimated_wait: `~${baseWaitMin} - ${baseWaitMax} Mnt`,
+    wait_time_min: baseWaitMin,
+    wait_time_max: baseWaitMax,
+    peak_percentage: peakPct,
     confidence_score: '96% Akurasi Prediktif AI',
     tips,
   });
@@ -555,12 +609,12 @@ app.post('/api/ai/recommendation', (req, res) => {
 
   // Fallback menu jika tabel kosong
   const FALLBACK_MENU = [
-    { id: 'puthu-01',        nama: 'Puthu',                  harga: 18000, kategori: 'pusaka' },
-    { id: 'klepon-02',       nama: 'Klepon',                 harga: 18000, kategori: 'paling_laris' },
-    { id: 'cenil-03',        nama: 'Cenil',                  harga: 18000, kategori: 'pusaka' },
-    { id: 'lupis-04',        nama: 'Lupis',                  harga: 18000, kategori: 'pusaka' },
-    { id: 'paket-campur-05', nama: 'Paket Campur',           harga: 20000, kategori: 'paket_campur' },
-    { id: 'besek-hampers-06',nama: 'Box Besek Bambu Hampers', harga: 45000, kategori: 'besek' },
+    { id: 'puthu-01', nama: 'Puthu', harga: 18000, kategori: 'pusaka' },
+    { id: 'klepon-02', nama: 'Klepon', harga: 18000, kategori: 'paling_laris' },
+    { id: 'cenil-03', nama: 'Cenil', harga: 18000, kategori: 'pusaka' },
+    { id: 'lupis-04', nama: 'Lupis', harga: 18000, kategori: 'pusaka' },
+    { id: 'paket-campur-05', nama: 'Paket Campur', harga: 20000, kategori: 'paket_campur' },
+    { id: 'besek-hampers-06', nama: 'Box Besek Bambu Hampers', harga: 45000, kategori: 'besek' },
   ];
 
   db.query('SELECT * FROM menu', (err, dbResults) => {
@@ -570,44 +624,44 @@ app.post('/api/ai/recommendation', (req, res) => {
 
     let title = 'Paket Solo Harmoni 1935';
     let reason = 'Pilihan kurasi paling pas untuk dinikmati sendiri atau berdua.';
-    let aiTag  = 'Rekomendasi Cepat AI';
-    let items  = [];
+    let aiTag = 'Rekomendasi Cepat AI';
+    let items = [];
 
     const wantsHampers = lowerQ.includes('hampers') || lowerQ.includes('oleh') || lowerQ.includes('hadiah') || lowerQ.includes('besek');
-    const wantsFamily  = lowerQ.includes('keluarga') || lowerQ.includes('rame') || lowerQ.includes('arisan') || lowerQ.includes('banyak') || lowerQ.includes('kantor');
-    const wantsSweet   = lowerQ.includes('manis') || lowerQ.includes('gula') || lowerQ.includes('aren');
-    const wantsSavory  = lowerQ.includes('gurih') || lowerQ.includes('kenyal') || lowerQ.includes('cenil') || lowerQ.includes('lupis');
+    const wantsFamily = lowerQ.includes('keluarga') || lowerQ.includes('rame') || lowerQ.includes('arisan') || lowerQ.includes('banyak') || lowerQ.includes('kantor');
+    const wantsSweet = lowerQ.includes('manis') || lowerQ.includes('gula') || lowerQ.includes('aren');
+    const wantsSavory = lowerQ.includes('gurih') || lowerQ.includes('kenyal') || lowerQ.includes('cenil') || lowerQ.includes('lupis');
 
     if (wantsHampers) {
-      title  = 'Paket Hampers Anyaman Besek Elegan';
+      title = 'Paket Hampers Anyaman Besek Elegan';
       reason = 'Dipilih khusus untuk hantaran istimewa beraroma pandan dengan kemasan besek bambu ramah lingkungan.';
-      aiTag  = 'Rekomendasi Hantaran (Best Gift)';
-      items  = [
+      aiTag = 'Rekomendasi Hantaran (Best Gift)';
+      items = [
         { ...(find('besek') || menuList[5]), qty: 1, alasan: 'Kemasan anyaman bambu otentik siap hantar' },
         { ...(find('campur') || menuList[4]), qty: 1, alasan: 'Paket campur lengkap agar makin meriah' },
       ];
     } else if (wantsFamily) {
-      title  = 'Paket Santap Bersama Keluarga (3-5 Orang)';
+      title = 'Paket Santap Bersama Keluarga (3-5 Orang)';
       reason = 'Kombinasi komplit agar seluruh keluarga bisa mencicipi semua varian legendaris.';
-      aiTag  = 'Paling Populer untuk Keluarga';
-      items  = [
+      aiTag = 'Paling Populer untuk Keluarga';
+      items = [
         { ...(find('campur') || menuList[4]), qty: 2, alasan: '2 porsi paket campur isi komplit 4 jajanan' },
         { ...(find('puthu') || menuList[0]), qty: 1, alasan: 'Puthu hangat aroma pandan suji favorit anak-anak' },
         { ...(find('klepon') || menuList[1]), qty: 1, alasan: 'Klepon lumer gula aren sensasi letupan di mulut' },
       ];
     } else if (wantsSweet) {
-      title  = 'Kombinasi Manis Legit Aren Asli';
+      title = 'Kombinasi Manis Legit Aren Asli';
       reason = 'Favorit bagi pecinta manis alami gula aren murni tanpa pemanis buatan.';
-      aiTag  = 'Manis Alami (Natural Sweetness)';
-      items  = [
+      aiTag = 'Manis Alami (Natural Sweetness)';
+      items = [
         { ...(find('puthu') || menuList[0]), qty: 1, alasan: 'Uap bambu dengan gula aren cair di tengahnya' },
         { ...(find('klepon') || menuList[1]), qty: 1, alasan: 'Letupan gula aren cair berbalut kelapa parut segar' },
       ];
     } else if (wantsSavory) {
-      title  = 'Duo Tekstur Tradisional Gurih & Kenyal';
+      title = 'Duo Tekstur Tradisional Gurih & Kenyal';
       reason = 'Tekstur legit dari beras ketan dan singkong dengan kelapa parut kukus gurih.';
-      aiTag  = 'Pecinta Tekstur Tradisional';
-      items  = [
+      aiTag = 'Pecinta Tekstur Tradisional';
+      items = [
         { ...(find('cenil') || menuList[2]), qty: 1, alasan: 'Cenil warna-warni kenyal berlumur juruh aren' },
         { ...(find('lupis') || menuList[3]), qty: 1, alasan: 'Lupis segitiga ketan pulen legit gurih' },
       ];
@@ -623,21 +677,21 @@ app.post('/api/ai/recommendation', (req, res) => {
     let totalEst = items.reduce((acc, it) => acc + (it.harga || 18000) * (it.qty || 1), 0);
 
     if (targetBudget && totalEst > targetBudget && items.length > 1) {
-      items    = items.slice(0, 1);
+      items = items.slice(0, 1);
       totalEst = items.reduce((acc, it) => acc + (it.harga || 18000) * (it.qty || 1), 0);
     }
 
     res.json({
-      status              : 'success',
+      status: 'success',
       recommendation_title: title,
       reason,
-      ai_tag              : aiTag,
-      total_estimated     : totalEst,
-      items               : items.map((it) => ({
-        id    : it.id    || 'puthu-01',
-        nama  : it.nama  || it.name  || 'Menu Puthu Lanang',
-        harga : it.harga || it.price || 18000,
-        qty   : it.qty   || 1,
+      ai_tag: aiTag,
+      total_estimated: totalEst,
+      items: items.map((it) => ({
+        id: it.id || 'puthu-01',
+        nama: it.nama || it.name || 'Menu Puthu Lanang',
+        harga: it.harga || it.price || 18000,
+        qty: it.qty || 1,
         gambar: it.gambar || it.image || 'assets/images/puthu_bambu.png',
         alasan: it.alasan || 'Pilihan terbaik resep 1935',
       })),

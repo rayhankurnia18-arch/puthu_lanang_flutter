@@ -80,6 +80,16 @@ class _PaymentPageState extends State<PaymentPage> {
       );
 
       widget.state.ticket = response['data'];
+      await widget.state.recordOrderHistory(
+        summaryItems: widget.cartItems
+            .map((e) => '${e['quantity']}x ${e['nama']}')
+            .join(', '),
+        total: widget.totalPrice,
+        pickupDate: 'Hari Ini',
+        pickupTime: '16:30 - 17:00',
+        notes: widget.notes,
+        orderId: (response['data']?['id'] ?? response['data']?['qr_code_token'])?.toString(),
+      );
       widget.state.cart.clear();
 
       if (!mounted) return;

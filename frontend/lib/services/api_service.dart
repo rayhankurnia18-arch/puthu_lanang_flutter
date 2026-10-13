@@ -103,6 +103,18 @@ class ApiService {
     return body;
   }
 
+  // Riwayat pesanan user dari database (terbaru di urutan pertama)
+  static Future<List<Map<String, dynamic>>> getOrders(String phone) async {
+    final r = await http
+        .get(Uri.parse('$baseUrl/orders').replace(queryParameters: {'phone': phone}))
+        .timeout(const Duration(seconds: 8));
+    if (r.statusCode != 200) throw Exception('Gagal mengambil riwayat pesanan');
+
+    final body = jsonDecode(r.body) as Map<String, dynamic>;
+    final List<dynamic> data = (body['data'] as List<dynamic>?) ?? const [];
+    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   static Future<Map<String, dynamic>> createOrder({
     required String name, 
     required String phone, 

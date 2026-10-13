@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,6 +19,9 @@ class AppState extends ChangeNotifier {
   List<MenuItem> menu = const [];
   final List<CartItem> cart = [];
   Map<String, dynamic>? ticket;
+
+  // Riwayat transaksi (terbaru di urutan pertama)
+  List<Map<String, dynamic>> orderHistory = [];
 
   bool get loggedIn => token != null;
 
@@ -57,6 +62,7 @@ class AppState extends ChangeNotifier {
     token = prefs.getString('token');
     userName = prefs.getString('name') ?? '';
     phone = prefs.getString('phone') ?? '';
+    _loadHistory(prefs);
 
     notifyListeners();
   }
@@ -133,6 +139,7 @@ class AppState extends ChangeNotifier {
     await prefs.setString('name', name);
     await prefs.setString('phone', phone);
     await prefs.setInt('login_timestamp', DateTime.now().millisecondsSinceEpoch);
+    _loadHistory(prefs);
 
     notifyListeners();
   }
@@ -152,6 +159,7 @@ class AppState extends ChangeNotifier {
     token = null;
     userName = '';
     phone = '';
+    orderHistory = [];
 
     cart.clear();
     ticket = null;
@@ -285,6 +293,67 @@ class AppState extends ChangeNotifier {
   }
 
   // =========================
+  // RIWAYAT TRANSAKSI
+  // =========================
+
+  String get _historyKey => 'order_history_$phone';
+
+  void _loadHistory(SharedPreferences prefs) {
+    try {
+      final raw = prefs.getString(_historyKey);
+      orderHistory = raw == null
+          ? []
+          : (jsonDecode(raw) as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+    } catch (_) {
+      orderHistory = [];
+    }
+  }
+
+  // Catat pesanan yang selesai ke daftar Riwayat Transaksi
+  Future<void> recordOrderHistory({
+    required String summaryItems,
+    required int total,
+    required String pickupDate,
+    required String pickupTime,
+    String notes = '',
+    String? orderId,
+  }) async {
+    orderHistory.insert(0, {
+      'id': orderId ?? 'PL-${DateTime.now().millisecondsSinceEpoch}',
+      'created_at': DateTime.now().toIso8601String(),
+      'summary_items': summaryItems,
+      'total': total,
+      'outlet': 'Gerai Pusat Celaket',
+      'pickup_date': pickupDate,
+      'pickup_time': pickupTime,
+      'notes': notes,
+    });
+
+    await _saveHistoryCache();
+  }
+
+  // Ambil riwayat pesanan dari database lalu perbarui cache lokal.
+  // Melempar exception bila backend tidak terjangkau (UI memakai cache lama).
+  Future<void> loadOrderHistory() async {
+    if (phone.isEmpty) return;
+
+    orderHistory = await ApiService.getOrders(phone);
+    await _saveHistoryCache();
+    notifyListeners();
+  }
+
+  Future<void> _saveHistoryCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_historyKey, jsonEncode(orderHistory));
+    } catch (_) {
+      // Riwayat tetap tersedia di memori meskipun penyimpanan lokal gagal
+    }
+  }
+
+  // =========================
   // ORDER
   // =========================
 
@@ -292,7 +361,9 @@ class AppState extends ChangeNotifier {
     required String pickupTime,
     required String pickupDate,
     String notes = '',
+    int discount = 0,
   }) async {
+    final payTotal = (totalPrice - discount).clamp(0, totalPrice).toInt();
     final summaryItems = cart.map((e) => '${e.quantity}x ${e.item.name}').join(', ');
     final result = await ApiService.createOrder(
       name: userName,
@@ -310,7 +381,7 @@ class AppState extends ChangeNotifier {
             },
           )
           .toList(),
-      total: totalPrice,
+      total: payTotal,
       notes: notes,
     );
 
@@ -324,6 +395,16 @@ class AppState extends ChangeNotifier {
       'pickup_date': data['pickup_date'] ?? pickupDate,
       'summary_items': data['summary_items'] ?? (summaryItems.isNotEmpty ? summaryItems : '1x Puthu / Paket Pilihan'),
     };
+
+    // Simpan otomatis ke Riwayat Transaksi (sebelum keranjang dikosongkan)
+    await recordOrderHistory(
+      summaryItems: ticket!['summary_items'].toString(),
+      total: payTotal,
+      pickupDate: ticket!['pickup_date'].toString(),
+      pickupTime: ticket!['pickup_time'].toString(),
+      notes: ticket!['notes']?.toString() ?? '',
+      orderId: (data['id'] ?? data['qr_code_token'])?.toString(),
+    );
 
     cart.clear();
     tab = 3;

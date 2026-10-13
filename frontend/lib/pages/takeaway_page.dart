@@ -22,6 +22,18 @@ class _TakeawayPageState extends State<TakeawayPage> {
   ];
 
   String selectedOutlet = 'Gerai Pusat Celaket';
+
+  // --- Kupon promo ---
+  static const String _couponCode = 'PUTHUHEMAT10';
+  static const String _couponTitle = 'Diskon Spesial VIP Member';
+  static const int _couponDiscount = 10000;
+  static const int _couponMinTotal = 50000;
+  bool useCoupon = false;
+
+  bool get _couponEligible => widget.state.totalPrice >= _couponMinTotal;
+  bool get _couponApplied => useCoupon && _couponEligible;
+  int get _discountAmount => _couponApplied ? _couponDiscount : 0;
+  int get _payTotal => (widget.state.totalPrice - _discountAmount).clamp(0, widget.state.totalPrice).toInt();
   late List<Map<String, String>> dateOptions;
   late String selectedDate;
   late String selectedIsoDate;
@@ -120,7 +132,12 @@ class _TakeawayPageState extends State<TakeawayPage> {
       await widget.state.submitOrder(
         pickupTime: selectedTime,
         pickupDate: selectedIsoDate,
-        notes: formattedNotes,
+        notes: _couponApplied
+            ? (formattedNotes.isNotEmpty
+                ? '$formattedNotes | Kupon: $_couponCode (-${rupiah(_couponDiscount)})'
+                : 'Kupon: $_couponCode (-${rupiah(_couponDiscount)})')
+            : formattedNotes,
+        discount: _discountAmount,
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -203,51 +220,6 @@ class _TakeawayPageState extends State<TakeawayPage> {
                       ),
                       const SizedBox(width: 8),
                       const Text('Estimasi Antrean: ~12 Mnt', style: TextStyle(color: Colors.grey, fontSize: 10)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Cabang Dinoyo
-          GestureDetector(
-            onTap: () {
-              setState(() => selectedOutlet = 'Cabang Dinoyo');
-              fetchQueueEstimate();
-            },
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: brown2,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: selectedOutlet == 'Cabang Dinoyo' ? green : border, width: 1.5),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(selectedOutlet == 'Cabang Dinoyo' ? Icons.radio_button_checked : Icons.radio_button_off, color: selectedOutlet == 'Cabang Dinoyo' ? green : Colors.grey, size: 18),
-                      const SizedBox(width: 8),
-                      const Text('Cabang Dinoyo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.only(left: 26, top: 4, bottom: 8),
-                    child: Text('Jl. MT Haryono No. 195, Lowokwaru, Kota Malang', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                  ),
-                  Row(
-                    children: [
-                      const SizedBox(width: 26),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: const Color(0xFF1E3A1E), borderRadius: BorderRadius.circular(4)),
-                        child: const Text('Buka • Antrean Pendek', style: TextStyle(color: Color(0xFF4CAF50), fontSize: 10)),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('Estimasi Antrean: ~5 Mnt', style: TextStyle(color: Colors.grey, fontSize: 10)),
                     ],
                   ),
                 ],
@@ -368,14 +340,107 @@ class _TakeawayPageState extends State<TakeawayPage> {
 
           const SizedBox(height: 24),
 
-          // --- 6. TOTAL & TOMBOL BUAT TIKET ---
+          // --- 6. KUPON PROMO ---
+          const Text('🎟️ Kupon Promo', style: TextStyle(color: Color(0xFFE69616), fontWeight: FontWeight.bold, fontSize: 14)),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () {
+              if (!_couponEligible) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Kupon hanya bisa dipakai untuk transaksi minimal ${rupiah(_couponMinTotal)}.'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+              setState(() => useCoupon = !useCoupon);
+            },
+            child: Opacity(
+              opacity: _couponEligible ? 1 : 0.5,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: brown2,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _couponApplied ? green : border, width: 1.5),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      _couponApplied ? Icons.check_circle : Icons.radio_button_off,
+                      color: _couponApplied ? green : Colors.grey,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(color: gold.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
+                                child: const Text(_couponCode, style: TextStyle(color: gold, fontSize: 11, fontWeight: FontWeight.bold)),
+                              ),
+                              const Spacer(),
+                              Text('-${rupiah(_couponDiscount)}', style: TextStyle(color: green, fontSize: 12, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(_couponTitle, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Potongan ${rupiah(_couponDiscount)} dengan minimal transaksi ${rupiah(_couponMinTotal)}.',
+                            style: const TextStyle(color: Colors.grey, fontSize: 11),
+                          ),
+                          if (!_couponEligible)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                'Tambah ${rupiah(_couponMinTotal - widget.state.totalPrice)} lagi untuk memakai kupon ini.',
+                                style: const TextStyle(color: Colors.redAccent, fontSize: 10),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // --- 7. TOTAL & TOMBOL BUAT TIKET ---
+          if (_couponApplied) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Subtotal:', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                Text(rupiah(widget.state.totalPrice), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Diskon Kupon ($_couponCode):', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                Text('-${rupiah(_discountAmount)}', style: TextStyle(color: green, fontSize: 12, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('Total Pembayaran:', style: TextStyle(color: Colors.white, fontSize: 13)),
               Flexible(
                 child: Text(
-                  rupiah(widget.state.totalPrice),
+                  rupiah(_payTotal),
                   style: TextStyle(color: gold, fontSize: 16, fontWeight: FontWeight.bold),
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.end,
