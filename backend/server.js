@@ -87,6 +87,10 @@ app.post('/api/orders', (req, res) => {
   db.query(query, [name, phone, pickupTime, pickupDate, total, notes, qrToken, antreanNo], (err, result) => {
     if (err) return res.status(500).json({ error: err.message });
     
+    const summaryItems = Array.isArray(items) && items.length > 0
+      ? items.map(it => `${it.quantity || it.qty || 1}x ${it.nama || it.name || 'Puthu'}`).join(', ')
+      : '1x Puthu / Paket Pilihan';
+
     res.json({
       message: 'Pesanan berhasil dibuat',
       data: {
@@ -94,7 +98,14 @@ app.post('/api/orders', (req, res) => {
         qr_code_token: qrToken,
         antrean: antreanNo,
         status: 'Sedang Dikukus',
-        total_harga: total
+        total_harga: total,
+        name: name,
+        phone: phone,
+        pickup_time: pickupTime,
+        pickup_date: pickupDate,
+        notes: notes || '',
+        summary_items: summaryItems,
+        items: items || []
       }
     });
   });
