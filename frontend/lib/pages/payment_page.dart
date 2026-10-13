@@ -65,7 +65,7 @@ class _PaymentPageState extends State<PaymentPage> {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        throw 'Tidak dapat membuka jendela pembayaran Midtrans.';
+        throw Exception('Tidak dapat membuka jendela pembayaran Midtrans.');
       }
 
       // 3. Setelah simulasi pembayaran sukses, buat pesanan & e-tiket di database

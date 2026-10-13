@@ -25,10 +25,10 @@ class PuthuLanangApp extends StatefulWidget {
   const PuthuLanangApp({super.key});
 
   @override
-  State createState() => _PuthuLanangAppState();
+  State<PuthuLanangApp> createState() => _PuthuLanangAppState();
 }
 
-class _PuthuLanangAppState extends State {
+class _PuthuLanangAppState extends State<PuthuLanangApp> {
   final state = AppState();
 
   @override

@@ -1,9 +1,18 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import '../models/menu_item.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:3000/api';
+  // Android Emulator: 10.0.2.2 = host machine (Mac).
+  // Web / macOS desktop: localhost bisa digunakan langsung.
+  static String get _host {
+    if (!kIsWeb && Platform.isAndroid) return '10.0.2.2';
+    return 'localhost';
+  }
+
+  static String get baseUrl => 'http://$_host:3000/api';
 
   static Future<List<MenuItem>> getMenu() async {
     final r = await http.get(Uri.parse('$baseUrl/menu')).timeout(const Duration(seconds: 8));

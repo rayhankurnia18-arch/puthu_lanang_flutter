@@ -17,9 +17,11 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final popular = widget.state.menu.take(4).toList();
 
-    return ListView(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         // Kartu Profil & Indikator Antrean
         AppCard(
           child: Row(
@@ -368,7 +370,8 @@ class _HomePageState extends State<HomePage> {
             );
           },
         ),
-      ],
+        ],
+      ),
     );
   }
 }
