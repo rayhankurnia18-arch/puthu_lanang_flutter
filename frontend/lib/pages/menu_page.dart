@@ -4,6 +4,7 @@ import '../state/app_state.dart';
 import '../widgets/menu_card.dart';
 import '../widgets/app_card.dart';
 import 'takeaway_page.dart';
+import 'auth_page.dart';
 import '../services/api_service.dart';
 
 class MenuPage extends StatefulWidget {
@@ -141,7 +142,28 @@ class _MenuPageState extends State<MenuPage> {
                     ),
                   ),
                   ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      if (!state.loggedIn) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Silakan masuk atau daftar akun terlebih dahulu untuk melanjutkan pesanan.'),
+                            backgroundColor: gold,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AuthPage(
+                              state: state,
+                            ),
+                          ),
+                        );
+
+                        if (!state.loggedIn || !context.mounted) return;
+                      }
+
                       Navigator.push(
                         context,
                         MaterialPageRoute(

@@ -94,6 +94,16 @@ class _TakeawayPageState extends State<TakeawayPage> {
   }
 
   Future<void> submit() async {
+    if (!widget.state.loggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Silakan masuk atau daftar akun terlebih dahulu.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     setState(() => busy = true);
 
     final customNotes = notesController.text.trim();
