@@ -103,7 +103,7 @@ class _MenuPageState extends State<MenuPage> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
           children: [
             const Text(
-              'Menu Jajanan Traditional',
+              'Menu Jajanan Tradisional',
               style: TextStyle(
                 color: cream,
                 fontSize: 20,
