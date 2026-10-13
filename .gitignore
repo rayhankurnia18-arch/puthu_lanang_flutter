@@ -1,0 +1,13 @@
+# Backend Node.js
+backend/node_modules/
+backend/.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# macOS
+.DS_Store
+
+# VSCode
+.vscode/settings.json
