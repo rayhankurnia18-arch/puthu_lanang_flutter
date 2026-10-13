@@ -63,37 +63,25 @@ class TicketPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // --- HEADER ATAS (Celaket Online) ---
+        // --- HEADER ATAS ---
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: green,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text('PL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                ),
-                const SizedBox(width: 8),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Puthu Lanang', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                    Text('Mobile Smart Takeaway App', style: TextStyle(color: muted, fontSize: 9)),
-                  ],
-                ),
-              ],
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: green,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              alignment: Alignment.center,
+              child: const Text('PL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
             ),
-            Row(
+            const SizedBox(width: 8),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(width: 6, height: 6, decoration: const BoxDecoration(color: green, shape: BoxShape.circle)),
-                const SizedBox(width: 6),
-                const Text('Celaket Online', style: TextStyle(color: green, fontSize: 11, fontWeight: FontWeight.bold)),
+                Text('Puthu Lanang', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                Text('Mobile Smart Takeaway App', style: TextStyle(color: muted, fontSize: 9)),
               ],
             ),
           ],
@@ -244,10 +232,13 @@ class TicketPage extends StatelessWidget {
                             const SizedBox(width: 10),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
-                                Text('Slot Pengambilan', style: TextStyle(color: muted, fontSize: 9)),
-                                SizedBox(height: 2),
-                                Text('Hari Ini • 16:30 - 17:00', style: TextStyle(color: cream, fontWeight: FontWeight.bold, fontSize: 11)),
+                              children: [
+                                const Text('Slot Pengambilan', style: TextStyle(color: muted, fontSize: 9)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${t['pickup_date'] ?? 'Hari Ini'} • ${t['pickup_time'] ?? '16:30 - 17:00'}',
+                                  style: const TextStyle(color: cream, fontWeight: FontWeight.bold, fontSize: 11),
+                                ),
                               ],
                             ),
                           ],
@@ -316,8 +307,202 @@ class TicketPage extends StatelessWidget {
             ],
           ),
         ),
+
+        const SizedBox(height: 16),
+
+        // --- WIDGET AI SMART EXPIRY & FRESHNESS PREDICTOR ---
+        _buildAiFreshnessCard(t),
+
         const SizedBox(height: 30),
       ],
     );
+  }
+
+  Widget _buildAiFreshnessCard(Map<String, dynamic> t) {
+    final bestBefore = _calculateBestBefore(t);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: brown2,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: green.withValues(alpha: 0.6), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: green.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: green.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.eco_outlined, color: green, size: 18),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'AI Freshness & Quality Predictor',
+                  style: TextStyle(
+                    color: cream,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: green.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: green.withValues(alpha: 0.4)),
+                ),
+                child: const Text(
+                  '0% Pengawet Kimia',
+                  style: TextStyle(color: green, fontSize: 9, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Banner Golden Hour
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: brown,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: border),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.hourglass_top_rounded, color: gold, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Waktu Santap Optimal (Golden Window):',
+                        style: TextStyle(color: muted, fontSize: 10),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Sebelum $bestBefore (±4 Jam)',
+                        style: const TextStyle(
+                          color: gold,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: green.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    '100% Segar',
+                    style: TextStyle(color: green, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Peringatan Bahan Segar
+          const Text(
+            'CATATAN KESEGARAN BAHAN ALAMI:',
+            style: TextStyle(color: gold, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Puthu Lanang menggunakan kelapa parut segar kukus & gula aren asli tanpa zat pengawet. Kualitas terbaik dinikmati selagi hangat.',
+            style: TextStyle(color: muted, fontSize: 11, height: 1.4),
+          ),
+
+          const SizedBox(height: 12),
+          const Divider(color: border),
+          const SizedBox(height: 8),
+
+          // Tips Penyimpanan AI
+          const Text(
+            'TIPS PENYIMPANAN CERDAS BERBASIS AI:',
+            style: TextStyle(color: cream, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+          ),
+          const SizedBox(height: 8),
+
+          _buildTipRow(
+            Icons.restaurant,
+            'Nikmati Hangat Segera',
+            'Tekstur puthu dan letupan gula aren paling lembut dalam 4 jam setelah pengambilan.',
+          ),
+          const SizedBox(height: 6),
+          _buildTipRow(
+            Icons.kitchen,
+            'Simpan di Kulkas (Chiller)',
+            'Jika belum disantap, pisahkan juruh aren & kelapa, simpan tertutup rapat di kulkas tahan hingga 24 jam.',
+          ),
+          const SizedBox(height: 6),
+          _buildTipRow(
+            Icons.soup_kitchen,
+            'Kukus Ulang 3 Menit',
+            'Kukus kembali selama 2-3 menit sebelum disajikan agar kelapa dan adonan kembali pulen gurih.',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTipRow(IconData icon, String title, String desc) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: gold, size: 14),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(color: cream, fontSize: 11, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 1),
+              Text(desc, style: const TextStyle(color: muted, fontSize: 10, height: 1.3)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _calculateBestBefore(Map<String, dynamic> t) {
+    try {
+      final pickupTime = t['pickup_time']?.toString() ?? '17:00';
+      final parts = pickupTime.split('-');
+      final targetStr = (parts.length > 1 ? parts[1] : parts[0]).trim();
+      final timeParts = targetStr.split(':');
+      if (timeParts.length >= 2) {
+        int hour = int.parse(timeParts[0]);
+        int minute = int.parse(timeParts[1]);
+        int expiryHour = (hour + 4) % 24;
+        return '${expiryHour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} WIB';
+      }
+    } catch (_) {}
+    final now = DateTime.now().add(const Duration(hours: 4));
+    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} WIB';
   }
 }

@@ -293,6 +293,7 @@ class AppState extends ChangeNotifier {
     required String pickupDate,
     String notes = '',
   }) async {
+    final summaryItems = cart.map((e) => '${e.quantity}x ${e.item.name}').join(', ');
     final result = await ApiService.createOrder(
       name: userName,
       phone: phone,
@@ -313,7 +314,16 @@ class AppState extends ChangeNotifier {
       notes: notes,
     );
 
-    ticket = result['data'] as Map<String, dynamic>?;
+    final data = (result['data'] as Map<String, dynamic>?) ?? {};
+    ticket = {
+      ...data,
+      'notes': (data['notes'] != null && data['notes'].toString().isNotEmpty)
+          ? data['notes']
+          : notes,
+      'pickup_time': data['pickup_time'] ?? pickupTime,
+      'pickup_date': data['pickup_date'] ?? pickupDate,
+      'summary_items': data['summary_items'] ?? (summaryItems.isNotEmpty ? summaryItems : '1x Puthu / Paket Pilihan'),
+    };
 
     cart.clear();
     tab = 3;

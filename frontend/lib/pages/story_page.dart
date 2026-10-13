@@ -27,37 +27,25 @@ class _StoryPageState extends State<StoryPage> {
       controller: _scrollController, // 2. Pasang controller ke ListView
       padding: const EdgeInsets.all(16),
       children: [
-        // --- HEADER ATAS (Celaket Online) ---
+        // --- HEADER ATAS ---
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: green,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text('PL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                ),
-                const SizedBox(width: 8),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Puthu Lanang', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                    Text('Mobile Smart Takeaway App', style: TextStyle(color: muted, fontSize: 9)),
-                  ],
-                ),
-              ],
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: green,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              alignment: Alignment.center,
+              child: const Text('PL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
             ),
-            Row(
+            const SizedBox(width: 8),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(width: 6, height: 6, decoration: const BoxDecoration(color: green, shape: BoxShape.circle)),
-                const SizedBox(width: 6),
-                const Text('Celaket Online', style: TextStyle(color: green, fontSize: 11, fontWeight: FontWeight.bold)),
+                Text('Puthu Lanang', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                Text('Mobile Smart Takeaway App', style: TextStyle(color: muted, fontSize: 9)),
               ],
             ),
           ],
