@@ -7,6 +7,10 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Mode development/UTS: OTP disertakan di response API agar mudah di-demo
+// tanpa gateway WhatsApp berbayar. Matikan dengan: DEV_MODE=false npm run dev
+const DEV_MODE = process.env.DEV_MODE !== 'false';
+
 // =============================================================
 // KONEKSI DATABASE MYSQL (XAMPP / Laragon)
 // Menggunakan pool agar koneksi tahan terhadap timeout & restart
@@ -266,21 +270,37 @@ app.post('/api/auth/send-otp', async (req, res) => {
     db.query(insertOtp, [no_whatsapp, otpCode, expiresAt], async (err2) => {
       if (err2) return res.status(500).json({ message: err2.message });
 
-      try {
-        const pesan =
-          `🔒 *KODE OTP PUTHU LANANG*\n\n` +
-          `Kode verifikasi Anda: *${otpCode}*\n` +
-          `Berlaku 5 menit. Jangan berikan kode ini kepada siapa pun.\n\n` +
-          `_Puthu Lanang Malang — EST. 1935_`;
+      // OTP sudah tersimpan di tabel otp_codes — tampilkan di terminal untuk testing
+      console.log('KODE OTP:', otpCode, `(untuk ${no_whatsapp})`);
 
+      const pesan =
+        `🔒 *KODE OTP PUTHU LANANG*\n\n` +
+        `Kode verifikasi Anda: *${otpCode}*\n` +
+        `Berlaku 5 menit. Jangan berikan kode ini kepada siapa pun.\n\n` +
+        `_Puthu Lanang Malang — EST. 1935_`;
+
+      // Mode development / demo: kembalikan OTP di response, WhatsApp dikirim
+      // best-effort di belakang layar (gagal pun tidak menghalangi demo).
+      if (DEV_MODE) {
+        sendFonnteMessage(no_whatsapp, pesan)
+          .then(() => console.log(`[OTP] WhatsApp terkirim ke ${no_whatsapp}`))
+          .catch((apiErr) => console.warn('[OTP FONNTE GAGAL]:', apiErr.message));
+
+        return res.json({
+          success : true,
+          otp_code: otpCode,
+          message : 'OTP berhasil dikirim',
+        });
+      }
+
+      // Mode production: OTP TIDAK dikembalikan di response
+      try {
         await sendFonnteMessage(no_whatsapp, pesan);
-        console.log(`[OTP] Terkirim ke ${no_whatsapp}: ${otpCode}`);
-        res.json({ message: 'Kode OTP berhasil dikirim ke WhatsApp Anda.' });
+        console.log(`[OTP] Terkirim ke ${no_whatsapp}`);
+        res.json({ success: true, message: 'Kode OTP berhasil dikirim ke WhatsApp Anda.' });
       } catch (apiErr) {
         console.error('[OTP FONNTE GAGAL]:', apiErr.message);
-        // Tetap kirim respons sukses agar developer bisa lihat OTP di console
-        console.log(`[OTP DEV-MODE] Kode OTP untuk ${no_whatsapp} → ${otpCode}`);
-        res.json({ message: 'Kode OTP berhasil dibuat. (Cek console server untuk kode OTP.)' });
+        res.status(502).json({ success: false, message: 'Gagal mengirim OTP ke WhatsApp. Coba lagi.' });
       }
     });
   });
