@@ -87,7 +87,7 @@ class _MenuPageState extends State<MenuPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-            '✨ $addedCount porsi rekomendasi AI berhasil ditambahkan ke keranjang!'),
+            '✨ $addedCount porsi rekomendasi kami berhasil ditambahkan ke keranjang!'),
         backgroundColor: green,
         duration: const Duration(seconds: 2),
       ),
