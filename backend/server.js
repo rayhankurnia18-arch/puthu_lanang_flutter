@@ -1,3 +1,4 @@
+require('dotenv').config(); // Muat rahasia dari backend/.env
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2');
@@ -38,21 +39,67 @@ db.getConnection((err, connection) => {
 });
 
 // Pastikan tabel `orders` punya kolom `summary_items` (ringkasan item pesanan)
-// agar riwayat bisa menampilkan isi pesanan. Aman dijalankan berulang kali.
+// agar riwayat bisa menampilkan isi pesanan, serta kolom `user_id` (relasi ke
+// akun pemilik pesanan). Aman dijalankan berulang kali.
 function ensureOrdersSchema() {
-  const checkColumn = `
-    SELECT COUNT(*) AS n FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'summary_items'
-  `;
-  db.query(checkColumn, (err, rows) => {
-    if (err) return console.error('❌ Gagal memeriksa skema tabel orders:', err.message);
-    if (rows[0].n > 0) return;
+  const ensureColumn = (column, alterSql) => {
+    const checkColumn = `
+      SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND COLUMN_NAME = ?
+    `;
+    db.query(checkColumn, [column], (err, rows) => {
+      if (err) return console.error(`❌ Gagal memeriksa kolom orders.${column}:`, err.message);
+      if (rows[0].n > 0) return;
 
-    db.query('ALTER TABLE orders ADD COLUMN summary_items TEXT NULL AFTER total', (err2) => {
-      if (err2) return console.error('❌ Gagal menambah kolom summary_items:', err2.message);
-      console.log('✅ Kolom orders.summary_items berhasil ditambahkan.');
+      db.query(alterSql, (err2) => {
+        if (err2) return console.error(`❌ Gagal menambah kolom ${column}:`, err2.message);
+        console.log(`✅ Kolom orders.${column} berhasil ditambahkan.`);
+      });
     });
+  };
+
+  ensureColumn('summary_items', 'ALTER TABLE orders ADD COLUMN summary_items TEXT NULL AFTER total');
+  ensureColumn('user_id', 'ALTER TABLE orders ADD COLUMN user_id INT NULL AFTER id');
+}
+
+// =============================================================
+// HELPER: Verifikasi akun pemilik request
+// - user_id harus ada di tabel `users` (akun yang sudah dihapus ditolak)
+// - header `Authorization: Bearer <token>` harus cocok dengan token akun tsb
+// Callback: cb(user) bila valid; bila tidak, response error langsung dikirim.
+// =============================================================
+function parseUserId(raw) {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function withAuthenticatedUser(req, res, rawUserId, cb) {
+  const userId = parseUserId(rawUserId);
+  if (!userId) {
+    return res.status(400).json({ error: 'user_id wajib diisi dan harus berupa angka.' });
+  }
+
+  db.query('SELECT id, nama, no_whatsapp FROM users WHERE id = ? LIMIT 1', [userId], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (rows.length === 0) {
+      return res.status(401).json({ error: 'Akun tidak ditemukan atau sudah dihapus. Silakan masuk kembali.' });
+    }
+
+    const user = rows[0];
+    const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    if (bearer !== 'server-token-' + user.no_whatsapp) {
+      return res.status(403).json({ error: 'Sesi tidak valid untuk akun ini. Silakan masuk kembali.' });
+    }
+
+    cb(user);
   });
+}
+
+// Format tanggal lokal YYYY-MM-DD (fallback bila pickupDate tidak dikirim)
+function todayIso() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 // =============================================================
@@ -72,7 +119,7 @@ function sendFonnteMessage(targetPhone, message) {
       path: '/send',
       method: 'POST',
       headers: {
-        'Authorization': 'x97GBmRqfzqDm8mSVd1U', // ← Ganti dengan token Fonnte Anda
+        'Authorization': process.env.FONNTE_TOKEN,
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(data),
       },
@@ -106,8 +153,9 @@ app.get('/', (req, res) => {
     version: '2.0.0',
     endpoints: [
       'GET  /api/menu',
-      'GET  /api/orders?phone=<no_whatsapp>',
+      'GET  /api/orders?user_id=<id_akun>',
       'POST /api/orders',
+      'PATCH /api/orders/:id/complete',
       'POST /api/auth/user-login',
       'POST /api/auth/user-register',
       'POST /api/auth/send-otp',
@@ -132,86 +180,131 @@ app.get('/api/menu', (req, res) => {
 
 // =============================================================
 // POST /api/orders — Simpan pesanan baru & kembalikan data e-tiket
-// Body: { name, phone, pickupTime, pickupDate, items, total, notes }
+// Header: Authorization: Bearer <token>
+// Body: { user_id, pickupTime, pickupDate, items, total, notes }
+// Pesanan disimpan dengan orders.user_id = akun yang sedang login.
+// Nama & nomor WhatsApp diambil dari data akun di database.
 // =============================================================
 app.post('/api/orders', (req, res) => {
-  const { name, phone, pickupTime, pickupDate, items, total, notes } = req.body;
+  const { user_id, pickupTime, pickupDate, items, total, notes } = req.body;
 
-  if (!name || !phone || !total) {
-    return res.status(400).json({ error: 'Field name, phone, dan total wajib diisi.' });
+  const totalNum = Number(total);
+  if (!Number.isFinite(totalNum) || totalNum <= 0) {
+    return res.status(400).json({ error: 'Field total wajib diisi dengan angka lebih dari 0.' });
   }
 
-  const qrToken = 'PL-2026-' + Math.floor(10000 + Math.random() * 90000);
-  const antreanNo = Math.floor(50 + Math.random() * 50);
+  withAuthenticatedUser(req, res, user_id, (user) => {
+    const qrToken = 'PL-2026-' + Math.floor(10000 + Math.random() * 90000);
+    const antreanNo = Math.floor(50 + Math.random() * 50);
+    const pickupDateValue = pickupDate && /^\d{4}-\d{2}-\d{2}$/.test(pickupDate) ? pickupDate : todayIso();
 
-  const summaryItems =
-    Array.isArray(items) && items.length > 0
-      ? items.map((it) => `${it.quantity || it.qty || 1}x ${it.nama || it.name || 'Puthu'}`).join(', ')
-      : '1x Puthu / Paket Pilihan';
+    const summaryItems =
+      Array.isArray(items) && items.length > 0
+        ? items.map((it) => `${it.quantity || it.qty || 1}x ${it.nama || it.name || 'Puthu'}`).join(', ')
+        : '1x Puthu / Paket Pilihan';
 
-  const query = `
-    INSERT INTO orders (name, phone, pickup_time, pickup_date, total, notes, qr_token, antrean, summary_items)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
+    const query = `
+      INSERT INTO orders (user_id, name, phone, pickup_time, pickup_date, total, notes, qr_token, antrean, summary_items)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
 
-  db.query(
-    query,
-    [name, phone, pickupTime || '-', pickupDate || 'Hari Ini', total, notes || '', qrToken, antreanNo, summaryItems],
-    (err, result) => {
-      if (err) return res.status(500).json({ error: err.message });
+    db.query(
+      query,
+      [user.id, user.nama, user.no_whatsapp, pickupTime || '-', pickupDateValue, totalNum, notes || '', qrToken, antreanNo, summaryItems],
+      (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
 
-      res.json({
-        message: 'Pesanan berhasil dibuat',
-        data: {
-          id: 'ORD-' + result.insertId,
-          qr_code_token: qrToken,
-          antrean: antreanNo,
-          status: 'Sedang Dikukus',
-          total_harga: total,
-          name,
-          phone,
-          pickup_time: pickupTime || '-',
-          pickup_date: pickupDate || 'Hari Ini',
-          notes: notes || '',
-          summary_items: summaryItems,
-          items: items || [],
-        },
-      });
-    }
-  );
+        res.json({
+          message: 'Pesanan berhasil dibuat',
+          data: {
+            id: 'ORD-' + result.insertId,
+            user_id: user.id,
+            qr_code_token: qrToken,
+            antrean: antreanNo,
+            status: 'Sedang Dikukus',
+            total_harga: totalNum,
+            name: user.nama,
+            phone: user.no_whatsapp,
+            pickup_time: pickupTime || '-',
+            pickup_date: pickupDateValue,
+            notes: notes || '',
+            summary_items: summaryItems,
+            items: items || [],
+          },
+        });
+      }
+    );
+  });
 });
 
 // =============================================================
-// GET /api/orders?phone=<no_whatsapp> — Riwayat pesanan user dari database
-// Urut dari yang terbaru. Response: { data: [ ...pesanan ] }
+// GET /api/orders?user_id=<id_akun> — Riwayat pesanan milik akun
+// Header: Authorization: Bearer <token>
+// Hanya mengembalikan pesanan dengan orders.user_id = akun tsb (urut terbaru).
+// Pesanan akun yang sudah dihapus (user_id NULL) TIDAK akan pernah muncul.
+// Response: { data: [ ...pesanan ] }
 // =============================================================
 app.get('/api/orders', (req, res) => {
-  const phone = (req.query.phone || '').toString().trim();
+  withAuthenticatedUser(req, res, req.query.user_id, (user) => {
+    const query = `
+      SELECT
+        CONCAT('ORD-', id)                    AS id,
+        qr_token                              AS qr_code_token,
+        antrean,
+        status,
+        total,
+        summary_items,
+        pickup_time,
+        DATE_FORMAT(pickup_date, '%Y-%m-%d')  AS pickup_date,
+        notes,
+        created_at
+      FROM orders
+      WHERE user_id = ?
+      ORDER BY created_at DESC, id DESC
+    `;
 
-  if (!phone) {
-    return res.status(400).json({ error: 'Parameter phone wajib diisi.' });
+    db.query(query, [user.id], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ data: rows });
+    });
+  });
+});
+
+// =============================================================
+// PATCH /api/orders/:id/complete — Konfirmasi pesanan selesai
+// Header: Authorization: Bearer <token>
+// Body: { user_id }
+// Ubah status 'Sedang Dikukus' -> 'Selesai' (hanya untuk pesanan milik akun).
+// :id boleh berupa '8' atau 'ORD-8'.
+// =============================================================
+app.patch('/api/orders/:id/complete', (req, res) => {
+  const orderId = parseInt(String(req.params.id).replace(/^ORD-/i, ''), 10);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ error: 'ID pesanan tidak valid.' });
   }
 
-  const query = `
-    SELECT
-      CONCAT('ORD-', id)                    AS id,
-      qr_token                              AS qr_code_token,
-      antrean,
-      status,
-      total,
-      summary_items,
-      pickup_time,
-      DATE_FORMAT(pickup_date, '%Y-%m-%d')  AS pickup_date,
-      notes,
-      created_at
-    FROM orders
-    WHERE phone = ?
-    ORDER BY created_at DESC, id DESC
-  `;
+  withAuthenticatedUser(req, res, req.body.user_id, (user) => {
+    db.query('SELECT id, status FROM orders WHERE id = ? AND user_id = ? LIMIT 1', [orderId, user.id], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'Pesanan tidak ditemukan untuk akun ini.' });
+      }
 
-  db.query(query, [phone], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ data: rows });
+      const respondOk = () =>
+        res.json({ message: 'Pesanan ditandai selesai', data: { id: 'ORD-' + orderId, status: 'Selesai' } });
+
+      // Idempoten: sudah selesai -> tetap sukses
+      if (rows[0].status === 'Selesai') return respondOk();
+
+      db.query(
+        "UPDATE orders SET status = 'Selesai' WHERE id = ? AND user_id = ?",
+        [orderId, user.id],
+        (err2) => {
+          if (err2) return res.status(500).json({ error: err2.message });
+          respondOk();
+        }
+      );
+    });
   });
 });
 
@@ -471,7 +564,7 @@ app.post('/api/auth/forgot-password', (req, res) => {
 app.post('/api/payment/create-charge', (req, res) => {
   const { gross_amount, customer_name, customer_phone } = req.body;
 
-  const serverKey = 'SB-Mid-server-gZRRXn2c7323zgcAPStRVskk'; // ← Ganti dengan Server Key Midtrans Anda
+  const serverKey = process.env.MIDTRANS_SERVER_KEY;
   const encodedKey = Buffer.from(serverKey + ':').toString('base64');
 
   const payload = JSON.stringify({

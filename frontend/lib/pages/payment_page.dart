@@ -69,11 +69,19 @@ class _PaymentPageState extends State<PaymentPage> {
       }
 
       // 3. Setelah simulasi pembayaran sukses, buat pesanan & e-tiket di database
+      final userId = widget.state.userId;
+      final token = widget.state.token;
+      if (userId == null || token == null) {
+        throw Exception('Silakan masuk terlebih dahulu.');
+      }
+      final now = DateTime.now();
+      final todayIso =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
       final response = await ApiService.createOrder(
-        name: widget.state.userName.isEmpty ? 'Pelanggan Puthu Lanang' : widget.state.userName,
-        phone: widget.state.phone.isEmpty ? '088212383828' : widget.state.phone,
+        userId: userId,
+        token: token,
         pickupTime: '16:30 - 17:00',
-        pickupDate: 'Hari Ini',
+        pickupDate: todayIso,
         items: widget.cartItems,
         total: widget.totalPrice,
         notes: '${widget.notes} [Midtrans Snap: $selectedMethod]',

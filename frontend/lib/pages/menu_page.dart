@@ -6,6 +6,7 @@ import '../widgets/app_card.dart';
 import 'takeaway_page.dart';
 import 'auth_page.dart';
 import '../services/api_service.dart';
+import '../utils/validators.dart';
 
 class MenuPage extends StatefulWidget {
   final AppState state;
@@ -20,6 +21,7 @@ class _MenuPageState extends State<MenuPage> {
   bool isAiExpanded = false;
   bool loadingAi = false;
   final TextEditingController aiPromptController = TextEditingController();
+  final GlobalKey<FormState> _aiFormKey = GlobalKey<FormState>();
   Map<String, dynamic>? aiRecommendation;
 
   @override
@@ -304,70 +306,100 @@ class _MenuPageState extends State<MenuPage> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Form Input Chat/Prompt
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: aiPromptController,
-                          style: const TextStyle(color: cream, fontSize: 13),
-                          decoration: InputDecoration(
-                            hintText:
-                                'Misal: "Camilan santai 2 orang budget 35rb"',
-                            hintStyle: TextStyle(
-                                color: muted.withValues(alpha: 0.6),
-                                fontSize: 12),
-                            filled: true,
-                            fillColor: brown,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 10),
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: border)),
-                            enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: border)),
-                            focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: gold)),
+                  // Form Input Chat/Prompt (kosong diizinkan -> rekomendasi default)
+                  Form(
+                    key: _aiFormKey,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: aiPromptController,
+                            style: const TextStyle(color: cream, fontSize: 13),
+                            validator: (v) {
+                              final text = v?.trim() ?? '';
+                              if (text.isEmpty) return null;
+                              if (!RegExp(r'[A-Za-z0-9]').hasMatch(text)) {
+                                return 'Permintaan harus berisi huruf atau angka';
+                              }
+                              return Validators.optionalText(text,
+                                  maxLength: 150, fieldName: 'Permintaan');
+                            },
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
+                            decoration: InputDecoration(
+                              hintText:
+                                  'Misal: "Camilan santai 2 orang budget 35rb"',
+                              hintStyle: TextStyle(
+                                  color: muted.withValues(alpha: 0.6),
+                                  fontSize: 12),
+                              filled: true,
+                              fillColor: brown,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: border)),
+                              enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: border)),
+                              focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: gold)),
+                              errorBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide:
+                                      const BorderSide(color: Colors.redAccent)),
+                              focusedErrorBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide:
+                                      const BorderSide(color: Colors.redAccent)),
+                              errorStyle: const TextStyle(
+                                  color: Colors.redAccent, fontSize: 11),
+                            ),
+                            onFieldSubmitted: (val) {
+                              if (val.trim().isNotEmpty &&
+                                  (_aiFormKey.currentState?.validate() ?? false)) {
+                                requestRecommendation(customPrompt: val);
+                              }
+                            },
                           ),
-                          onSubmitted: (val) {
-                            if (val.trim().isNotEmpty)
-                              requestRecommendation(customPrompt: val);
-                          },
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: loadingAi
-                            ? null
-                            : () {
-                                if (aiPromptController.text.trim().isNotEmpty) {
-                                  requestRecommendation(
-                                      customPrompt:
-                                          aiPromptController.text.trim());
-                                } else {
-                                  requestRecommendation(
-                                      preference: 'campur favorit');
-                                }
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: gold,
-                          foregroundColor: brown,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: loadingAi
+                              ? null
+                              : () {
+                                  if (!(_aiFormKey.currentState?.validate() ??
+                                      false)) {
+                                    return;
+                                  }
+                                  if (aiPromptController.text.trim().isNotEmpty) {
+                                    requestRecommendation(
+                                        customPrompt:
+                                            aiPromptController.text.trim());
+                                  } else {
+                                    requestRecommendation(
+                                        preference: 'campur favorit');
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: gold,
+                            foregroundColor: brown,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: loadingAi
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: brown))
+                              : const Icon(Icons.send_rounded, size: 18),
                         ),
-                        child: loadingAi
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: brown))
-                            : const Icon(Icons.send_rounded, size: 18),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
 
                   // Loading Indicator

@@ -4,6 +4,15 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import '../models/menu_item.dart';
 
+/// Dilempar saat backend menolak sesi (akun dihapus / token tidak cocok).
+class SessionExpiredException implements Exception {
+  final String message;
+  SessionExpiredException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   // Android Emulator: 10.0.2.2 = host machine (Mac).
   // Web / macOS desktop: localhost bisa digunakan langsung.
@@ -103,11 +112,35 @@ class ApiService {
     return body;
   }
 
-  // Riwayat pesanan user dari database (terbaru di urutan pertama)
-  static Future<List<Map<String, dynamic>>> getOrders(String phone) async {
+  static Map<String, String> _authHeaders(String token) => {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      };
+
+  // Lempar SessionExpiredException bila akun tidak valid lagi (mis. sudah dihapus)
+  static void _throwIfSessionInvalid(http.Response r) {
+    if (r.statusCode == 401 || r.statusCode == 403) {
+      String message = 'Sesi berakhir. Silakan masuk kembali.';
+      try {
+        final body = jsonDecode(r.body) as Map<String, dynamic>;
+        message = (body['error'] ?? message).toString();
+      } catch (_) {}
+      throw SessionExpiredException(message);
+    }
+  }
+
+  // Riwayat pesanan milik akun (berdasarkan user_id), terbaru di urutan pertama
+  static Future<List<Map<String, dynamic>>> getOrders({
+    required int userId,
+    required String token,
+  }) async {
     final r = await http
-        .get(Uri.parse('$baseUrl/orders').replace(queryParameters: {'phone': phone}))
+        .get(
+          Uri.parse('$baseUrl/orders').replace(queryParameters: {'user_id': '$userId'}),
+          headers: _authHeaders(token),
+        )
         .timeout(const Duration(seconds: 8));
+    _throwIfSessionInvalid(r);
     if (r.statusCode != 200) throw Exception('Gagal mengambil riwayat pesanan');
 
     final body = jsonDecode(r.body) as Map<String, dynamic>;
@@ -115,21 +148,44 @@ class ApiService {
     return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  // Tandai pesanan selesai: status 'Sedang Dikukus' -> 'Selesai' di database
+  static Future<void> completeOrder({
+    required String orderId,
+    required int userId,
+    required String token,
+  }) async {
+    final r = await http
+        .patch(
+          Uri.parse('$baseUrl/orders/${Uri.encodeComponent(orderId)}/complete'),
+          headers: _authHeaders(token),
+          body: jsonEncode({'user_id': userId}),
+        )
+        .timeout(const Duration(seconds: 8));
+    _throwIfSessionInvalid(r);
+    if (r.statusCode >= 400) {
+      String message = 'Gagal menyelesaikan pesanan';
+      try {
+        final body = jsonDecode(r.body) as Map<String, dynamic>;
+        message = (body['error'] ?? message).toString();
+      } catch (_) {}
+      throw Exception(message);
+    }
+  }
+
   static Future<Map<String, dynamic>> createOrder({
-    required String name, 
-    required String phone, 
-    required String pickupTime, 
-    required String pickupDate, 
-    required List<Map<String, dynamic>> items, 
-    required int total, 
-    String notes = ''
+    required int userId,
+    required String token,
+    required String pickupTime,
+    required String pickupDate,
+    required List<Map<String, dynamic>> items,
+    required int total,
+    String notes = '',
   }) async {
     final r = await http.post(
-      Uri.parse('$baseUrl/orders'), 
-      headers: {'Content-Type': 'application/json'}, 
+      Uri.parse('$baseUrl/orders'),
+      headers: _authHeaders(token),
       body: jsonEncode({
-        'name': name,
-        'phone': phone,
+        'user_id': userId,
         'pickupTime': pickupTime,
         'pickupDate': pickupDate,
         'items': items,
@@ -137,6 +193,7 @@ class ApiService {
         'notes': notes
       })
     );
+    _throwIfSessionInvalid(r);
     final body = jsonDecode(r.body) as Map<String, dynamic>;
     if (r.statusCode >= 400) throw Exception(body['error'] ?? 'Pesanan gagal');
     return body;

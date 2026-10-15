@@ -15,6 +15,7 @@ class AppState extends ChangeNotifier {
   String userName = '';
   String phone = '';
   String? token;
+  int? userId; // ID akun di tabel `users` (kunci relasi pesanan)
 
   List<MenuItem> menu = const [];
   final List<CartItem> cart = [];
@@ -62,6 +63,15 @@ class AppState extends ChangeNotifier {
     token = prefs.getString('token');
     userName = prefs.getString('name') ?? '';
     phone = prefs.getString('phone') ?? '';
+    userId = prefs.getInt('user_id');
+
+    // Sesi lama (sebelum riwayat diikat ke user_id) tidak punya user_id:
+    // paksa masuk ulang agar pesanan terikat ke akun yang benar.
+    if (token != null && userId == null) {
+      await logout();
+      return;
+    }
+
     _loadHistory(prefs);
 
     notifyListeners();
@@ -74,8 +84,9 @@ class AppState extends ChangeNotifier {
   Future<void> register(
     String name,
     String p,
-    String pass,
-  ) async {
+    String pass, {
+    required int userId,
+  }) async {
     final cleanName = name.trim();
     final cleanPhone = p.trim();
     final cleanPassword = pass.trim();
@@ -91,6 +102,7 @@ class AppState extends ChangeNotifier {
     // Register ke MySQL melalui backend (sudah dilakukan di verify-otp)
     // Langsung simpan sesi login ke SharedPreferences
     await _saveSession(
+      userId: userId,
       name: cleanName,
       phone: cleanPhone,
       token: 'server-token-$cleanPhone',
@@ -115,8 +127,11 @@ class AppState extends ChangeNotifier {
     // Login ke MySQL melalui backend
     final result = await ApiService.login(cleanPhone, cleanPassword);
     final data = result['data'] as Map<String, dynamic>;
+    final id = int.tryParse('${data['id']}');
+    if (id == null) throw Exception('Data akun dari server tidak valid.');
 
     await _saveSession(
+      userId: id,
       name: data['nama'] as String? ?? 'Pecinta Kuliner',
       phone: cleanPhone,
       token: data['token'] as String? ?? 'server-token-$cleanPhone',
@@ -125,16 +140,19 @@ class AppState extends ChangeNotifier {
 
   // Helper: simpan sesi ke SharedPreferences & update state
   Future<void> _saveSession({
+    required int userId,
     required String name,
     required String phone,
     required String token,
   }) async {
     final prefs = await SharedPreferences.getInstance();
 
+    this.userId = userId;
     this.token = token;
     userName = name;
     this.phone = phone;
 
+    await prefs.setInt('user_id', userId);
     await prefs.setString('token', token);
     await prefs.setString('name', name);
     await prefs.setString('phone', phone);
@@ -151,11 +169,13 @@ class AppState extends ChangeNotifier {
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
 
+    await prefs.remove('user_id');
     await prefs.remove('token');
     await prefs.remove('name');
     await prefs.remove('phone');
     await prefs.remove('login_timestamp');
 
+    userId = null;
     token = null;
     userName = '';
     phone = '';
@@ -296,11 +316,13 @@ class AppState extends ChangeNotifier {
   // RIWAYAT TRANSAKSI
   // =========================
 
-  String get _historyKey => 'order_history_$phone';
+  // Cache lokal riwayat dipisah per user_id (bukan nomor telepon) sehingga
+  // akun baru dengan nomor yang sama tidak mewarisi riwayat akun lama.
+  String get _historyKey => 'order_history_u${userId ?? 0}';
 
   void _loadHistory(SharedPreferences prefs) {
     try {
-      final raw = prefs.getString(_historyKey);
+      final raw = userId == null ? null : prefs.getString(_historyKey);
       orderHistory = raw == null
           ? []
           : (jsonDecode(raw) as List)
@@ -325,6 +347,7 @@ class AppState extends ChangeNotifier {
       'created_at': DateTime.now().toIso8601String(),
       'summary_items': summaryItems,
       'total': total,
+      'status': 'Sedang Dikukus',
       'outlet': 'Gerai Pusat Celaket',
       'pickup_date': pickupDate,
       'pickup_time': pickupTime,
@@ -334,17 +357,50 @@ class AppState extends ChangeNotifier {
     await _saveHistoryCache();
   }
 
-  // Ambil riwayat pesanan dari database lalu perbarui cache lokal.
+  // Ambil riwayat pesanan dari database berdasarkan user_id lalu perbarui cache.
   // Melempar exception bila backend tidak terjangkau (UI memakai cache lama).
+  // Bila server menolak sesi (akun sudah dihapus), otomatis logout.
   Future<void> loadOrderHistory() async {
-    if (phone.isEmpty) return;
+    final id = userId;
+    final tk = token;
+    if (id == null || tk == null) return;
 
-    orderHistory = await ApiService.getOrders(phone);
+    try {
+      orderHistory = await ApiService.getOrders(userId: id, token: tk);
+    } on SessionExpiredException {
+      await logout();
+      rethrow;
+    }
     await _saveHistoryCache();
     notifyListeners();
   }
 
+  // Konfirmasi pesanan selesai: ubah status di database menjadi 'Selesai'.
+  Future<void> completeOrder() async {
+    final id = userId;
+    final tk = token;
+    final orderId = ticket?['id']?.toString();
+    if (id == null || tk == null || orderId == null) {
+      throw Exception('Tidak ada pesanan aktif untuk diselesaikan.');
+    }
+
+    try {
+      await ApiService.completeOrder(orderId: orderId, userId: id, token: tk);
+    } on SessionExpiredException {
+      await logout();
+      rethrow;
+    }
+
+    final index = orderHistory.indexWhere((o) => o['id']?.toString() == orderId);
+    if (index >= 0) orderHistory[index]['status'] = 'Selesai';
+    await _saveHistoryCache();
+
+    ticket = null; // tiket sudah selesai, tidak lagi aktif
+    notifyListeners();
+  }
+
   Future<void> _saveHistoryCache() async {
+    if (userId == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_historyKey, jsonEncode(orderHistory));
@@ -363,27 +419,39 @@ class AppState extends ChangeNotifier {
     String notes = '',
     int discount = 0,
   }) async {
+    final id = userId;
+    final tk = token;
+    if (id == null || tk == null) {
+      throw Exception('Silakan masuk terlebih dahulu.');
+    }
+
     final payTotal = (totalPrice - discount).clamp(0, totalPrice).toInt();
     final summaryItems = cart.map((e) => '${e.quantity}x ${e.item.name}').join(', ');
-    final result = await ApiService.createOrder(
-      name: userName,
-      phone: phone,
-      pickupTime: pickupTime,
-      pickupDate: pickupDate,
-      items: cart
-          .map(
-            (e) => {
-              'menu_id': e.item.id,
-              'nama': e.item.name,
-              'quantity': e.quantity,
-              'harga': e.item.price,
-              'catatan': e.notes,
-            },
-          )
-          .toList(),
-      total: payTotal,
-      notes: notes,
-    );
+    final Map<String, dynamic> result;
+    try {
+      result = await ApiService.createOrder(
+        userId: id,
+        token: tk,
+        pickupTime: pickupTime,
+        pickupDate: pickupDate,
+        items: cart
+            .map(
+              (e) => {
+                'menu_id': e.item.id,
+                'nama': e.item.name,
+                'quantity': e.quantity,
+                'harga': e.item.price,
+                'catatan': e.notes,
+              },
+            )
+            .toList(),
+        total: payTotal,
+        notes: notes,
+      );
+    } on SessionExpiredException {
+      await logout();
+      rethrow;
+    }
 
     final data = (result['data'] as Map<String, dynamic>?) ?? {};
     ticket = {

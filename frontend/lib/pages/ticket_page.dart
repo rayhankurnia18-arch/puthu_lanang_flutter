@@ -1,12 +1,79 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../main.dart';
+import '../services/api_service.dart';
 import '../state/app_state.dart';
+import 'orders_page.dart';
 
-class TicketPage extends StatelessWidget {
+class TicketPage extends StatefulWidget {
   final AppState state;
 
   const TicketPage({super.key, required this.state});
+
+  @override
+  State<TicketPage> createState() => _TicketPageState();
+}
+
+class _TicketPageState extends State<TicketPage> {
+  AppState get state => widget.state;
+  bool _completing = false;
+
+  // Konfirmasi -> PATCH status 'Selesai' di backend -> buka Riwayat Transaksi
+  Future<void> _confirmComplete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: brown2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Konfirmasi Pesanan Selesai',
+          style: TextStyle(color: cream, fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'Pastikan pesanan sudah Anda terima dari kasir. Status pesanan akan diubah menjadi "Selesai".',
+          style: TextStyle(color: muted, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal', style: TextStyle(color: muted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: green),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ya, Selesai', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    setState(() => _completing = true);
+
+    try {
+      await state.completeOrder();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Pesanan ditandai selesai. Terima kasih!'), backgroundColor: green),
+      );
+      navigator.push(
+        MaterialPageRoute(builder: (_) => OrdersPage(state: state)),
+      );
+    } on SessionExpiredException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent));
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _completing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -306,6 +373,41 @@ class TicketPage extends StatelessWidget {
               const SizedBox(height: 20),
             ],
           ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // --- TOMBOL KONFIRMASI PESANAN SELESAI ---
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: ElevatedButton.icon(
+            onPressed: _completing ? null : _confirmComplete,
+            icon: _completing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.check_circle_outline),
+            label: Text(
+              _completing ? 'Memproses...' : 'Selesaikan Pesanan',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: green,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: green.withValues(alpha: 0.5),
+              disabledForegroundColor: Colors.white70,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Tekan setelah pesanan Anda diterima dari kasir.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: muted, fontSize: 10),
         ),
 
         const SizedBox(height: 16),

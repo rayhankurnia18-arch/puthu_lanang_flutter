@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../main.dart';
 import '../state/app_state.dart';
 import '../services/api_service.dart';
+import '../utils/validators.dart';
 
 class AuthPage extends StatefulWidget {
   final AppState state;
@@ -21,6 +23,7 @@ class _AuthPageState extends State<AuthPage> {
   final TextEditingController pass = TextEditingController();
   final TextEditingController otpCode = TextEditingController();
   final TextEditingController newPass = TextEditingController();
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   bool register = false;
   bool isOtpStep = false;
@@ -45,17 +48,12 @@ class _AuthPageState extends State<AuthPage> {
       error = null;
     });
 
-    if (phone.text.trim().isEmpty) {
-      setState(() { error = 'Nomor WhatsApp wajib diisi.'; });
-      return;
-    }
+    // Validasi semua field yang sedang tampil (pesan error muncul di bawah field)
+    if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    if (!isForgotStep && pass.text.trim().isEmpty) {
-      setState(() { error = 'Password wajib diisi.'; });
-      return;
-    }
-
-    setState(() { busy = true; });
+    setState(() {
+      busy = true;
+    });
 
     try {
       // 1. JIKA BUKAN LUPA PASSWORD DAN BUKAN REGISTER -> Langsung Login ke Backend
@@ -69,16 +67,11 @@ class _AuthPageState extends State<AuthPage> {
 
       // 2. JIKA SEDANG DAFTAR AKUN BARU
       if (register) {
-        if (name.text.trim().isEmpty) {
-          setState(() { 
-            error = 'Nama lengkap wajib diisi.'; 
-            busy = false;
-          });
-          return;
-        }
         await ApiService.sendOtp(phone.text.trim(), type: 'register');
         if (!mounted) return;
-        setState(() { isOtpStep = true; });
+        setState(() {
+          isOtpStep = true;
+        });
         return;
       }
 
@@ -86,36 +79,37 @@ class _AuthPageState extends State<AuthPage> {
       if (isForgotStep) {
         await ApiService.sendOtp(phone.text.trim(), type: 'forgot');
         if (!mounted) return;
-        setState(() { isOtpStep = true; });
+        setState(() {
+          isOtpStep = true;
+        });
         return;
       }
-
     } catch (e) {
       if (!mounted) return;
       setState(() {
         error = e.toString().replaceFirst('Exception: ', '');
       });
     } finally {
-      if (mounted) setState(() { busy = false; });
+      if (mounted) {
+        setState(() {
+          busy = false;
+        });
+      }
     }
   }
 
   // Langkah 2: Verifikasi OTP (Untuk Register & Lupa Password)
   Future<void> verifyAndSubmit() async {
     FocusScope.of(context).unfocus();
-    setState(() { error = null; });
+    setState(() {
+      error = null;
+    });
 
-    if (otpCode.text.trim().isEmpty) {
-      setState(() { error = 'Kode OTP wajib diisi.'; });
-      return;
-    }
+    if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    if (isForgotStep && newPass.text.trim().length < 6) {
-      setState(() { error = 'Password baru minimal 6 karakter.'; });
-      return;
-    }
-
-    setState(() { busy = true; });
+    setState(() {
+      busy = true;
+    });
 
     try {
       if (isForgotStep) {
@@ -127,7 +121,9 @@ class _AuthPageState extends State<AuthPage> {
 
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Password berhasil diubah! Silakan masuk.'), backgroundColor: green),
+          const SnackBar(
+              content: Text('Password berhasil diubah! Silakan masuk.'),
+              backgroundColor: green),
         );
         setState(() {
           isForgotStep = false;
@@ -139,7 +135,7 @@ class _AuthPageState extends State<AuthPage> {
         return;
       }
 
-      await ApiService.verifyOtp(
+      final verifyResult = await ApiService.verifyOtp(
         phone: phone.text.trim(),
         otpCode: otpCode.text.trim(),
         name: name.text.trim(),
@@ -148,7 +144,16 @@ class _AuthPageState extends State<AuthPage> {
       );
 
       if (register) {
-        await widget.state.register(name.text.trim(), phone.text.trim(), pass.text.trim());
+        final userId = int.tryParse('${(verifyResult['data'] as Map?)?['id']}');
+        if (userId == null) {
+          throw Exception('Data akun dari server tidak valid.');
+        }
+        await widget.state.register(
+          name.text.trim(),
+          phone.text.trim(),
+          pass.text.trim(),
+          userId: userId,
+        );
       }
 
       if (!mounted) return;
@@ -159,7 +164,11 @@ class _AuthPageState extends State<AuthPage> {
         error = e.toString().replaceFirst('Exception: ', '');
       });
     } finally {
-      if (mounted) setState(() { busy = false; });
+      if (mounted) {
+        setState(() {
+          busy = false;
+        });
+      }
     }
   }
 
@@ -175,6 +184,7 @@ class _AuthPageState extends State<AuthPage> {
       otpCode.clear();
       newPass.clear();
     });
+    _formKey.currentState?.reset();
   }
 
   @override
@@ -200,12 +210,13 @@ class _AuthPageState extends State<AuthPage> {
                           border: Border.all(color: border),
                         ),
                         child: IconButton(
-                          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+                          icon: const Icon(Icons.arrow_back,
+                              color: Colors.white, size: 20),
                           onPressed: () {
                             if (isOtpStep || isForgotStep) {
-                              setState(() { 
-                                isOtpStep = false; 
-                                isForgotStep = false; 
+                              setState(() {
+                                isOtpStep = false;
+                                isForgotStep = false;
                               });
                             } else {
                               Navigator.of(context).pop();
@@ -223,14 +234,23 @@ class _AuthPageState extends State<AuthPage> {
                           borderRadius: BorderRadius.circular(18),
                         ),
                         alignment: Alignment.center,
-                        child: const Text('PL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                        child: const Text('PL',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14)),
                       ),
                       const SizedBox(width: 10),
                       const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Puthu Lanang', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                          Text('Mobile Smart Takeaway App', style: TextStyle(color: muted, fontSize: 10)),
+                          Text('Puthu Lanang',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14)),
+                          Text('Mobile Smart Takeaway App',
+                              style: TextStyle(color: muted, fontSize: 10)),
                         ],
                       ),
                     ],
@@ -250,22 +270,33 @@ class _AuthPageState extends State<AuthPage> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: const Center(
-                            child: Icon(Icons.local_fire_department, color: brown, size: 34),
+                            child: Icon(Icons.local_fire_department,
+                                color: brown, size: 34),
                           ),
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          isForgotStep 
-                              ? 'Pulihkan Password' 
-                              : (isOtpStep ? 'Verifikasi WhatsApp' : 'Puthu Lanang Malang'),
-                          style: const TextStyle(color: cream, fontSize: 22, fontWeight: FontWeight.w900),
+                          isForgotStep
+                              ? 'Pulihkan Password'
+                              : (isOtpStep
+                                  ? 'Verifikasi WhatsApp'
+                                  : 'Puthu Lanang Malang'),
+                          style: const TextStyle(
+                              color: cream,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          isForgotStep 
-                              ? 'Masukkan nomor WA untuk reset sandi' 
-                              : (isOtpStep ? 'Masukkan 4 digit kode yang dikirim via WA' : 'Pelanggan End-User Mobile App'),
-                          style: const TextStyle(color: gold, fontSize: 12, fontWeight: FontWeight.bold),
+                          isForgotStep
+                              ? 'Masukkan nomor WA untuk reset sandi'
+                              : (isOtpStep
+                                  ? 'Masukkan 4 digit kode yang dikirim via WA'
+                                  : 'Pelanggan End-User Mobile App'),
+                          style: const TextStyle(
+                              color: gold,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -281,165 +312,229 @@ class _AuthPageState extends State<AuthPage> {
                       border: Border.all(color: border),
                       borderRadius: BorderRadius.circular(22),
                     ),
-                    child: Column(
-                      children: [
-                        // Tab Switcher
-                        if (!isOtpStep && !isForgotStep) ...[
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: brown,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: border),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: GestureDetector(
-                                    onTap: busy ? null : () => switchMode(false),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 10),
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: !register ? green : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        'Masuk Akun',
-                                        style: TextStyle(color: !register ? Colors.white : muted, fontWeight: FontWeight.bold, fontSize: 13),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: GestureDetector(
-                                    onTap: busy ? null : () => switchMode(true),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 10),
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: register ? green : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        'Daftar Akun Baru',
-                                        style: TextStyle(color: register ? Colors.white : muted, fontWeight: FontWeight.bold, fontSize: 13),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          // Tab Switcher
+                          if (!isOtpStep && !isForgotStep) ...[
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: brown,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: border),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap:
+                                          busy ? null : () => switchMode(false),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 10),
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: !register
+                                              ? green
+                                              : Colors.transparent,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        child: Text(
+                                          'Masuk Akun',
+                                          style: TextStyle(
+                                              color: !register
+                                                  ? Colors.white
+                                                  : muted,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-
-                        // Form Input Berdasarkan Step
-                        if (isOtpStep) ...[
-                          _field(
-                            label: 'KODE OTP (4 DIGIT)',
-                            controller: otpCode,
-                            icon: Icons.lock_clock_outlined,
-                            keyboardType: TextInputType.number,
-                            hint: 'Masukkan kode OTP',
-                          ),
-                          if (isForgotStep)
-                            _field(
-                              label: 'KATA SANDI BARU',
-                              controller: newPass,
-                              icon: Icons.lock_reset,
-                              obscure: true,
-                              hint: 'Password baru (min. 6 karakter)',
-                            ),
-                        ] else ...[
-                          if (register)
-                            _field(
-                              label: 'NAMA LENGKAP',
-                              controller: name,
-                              icon: Icons.person_outline,
-                              hint: 'Nama Anda',
-                            ),
-                          _field(
-                            label: 'NOMOR WHATSAPP',
-                            controller: phone,
-                            icon: Icons.phone_outlined,
-                            keyboardType: TextInputType.phone,
-                            hint: 'Nomor WhatsApp Anda',
-                          ),
-                          if (!isForgotStep)
-                            _field(
-                              label: register ? 'KATA SANDI' : 'PASSWORD',
-                              controller: pass,
-                              icon: Icons.lock_outline,
-                              obscure: true,
-                              hint: 'Kata Sandi Anda',
-                            ),
-                          
-                          // Tombol Lupa Password
-                          if (!register)
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: busy ? null : () {
-                                  setState(() {
-                                    isForgotStep = true;
-                                    error = null;
-                                    pass.clear();
-                                  });
-                                },
-                                child: const Text(
-                                  'Lupa Password?',
-                                  style: TextStyle(color: gold, fontSize: 12, fontWeight: FontWeight.bold),
-                                ),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap:
+                                          busy ? null : () => switchMode(true),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 10),
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: register
+                                              ? green
+                                              : Colors.transparent,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        child: Text(
+                                          'Daftar Akun Baru',
+                                          style: TextStyle(
+                                              color: register
+                                                  ? Colors.white
+                                                  : muted,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                        ],
+                            const SizedBox(height: 20),
+                          ],
 
-                        // Error Container
-                        if (error != null)
-                          Container(
-                            width: double.infinity,
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.30)),
-                            ),
-                            child: Text(error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
-                          ),
-
-                        const SizedBox(height: 8),
-
-                        // Tombol Aksi Utama
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: busy ? null : (isOtpStep ? verifyAndSubmit : submit),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: green,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  busy
-                                      ? 'Memproses...'
-                                      : isOtpStep
-                                          ? (isForgotStep ? 'Reset Password' : 'Verifikasi & Daftar')
-                                          : (!register ? 'Masuk Sekarang' : 'Kirim Kode OTP'),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                                const SizedBox(width: 8),
-                                const Text('→', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          // Form Input Berdasarkan Step
+                          if (isOtpStep) ...[
+                            _field(
+                              label: 'KODE OTP (4 DIGIT)',
+                              controller: otpCode,
+                              icon: Icons.lock_clock_outlined,
+                              keyboardType: TextInputType.number,
+                              hint: 'Masukkan kode OTP',
+                              inputFormatters: [
+                                ...Validators.digitsOnly,
+                                LengthLimitingTextInputFormatter(4)
                               ],
+                              validator: (v) => Validators.otp(v, length: 4),
+                            ),
+                            if (isForgotStep)
+                              _field(
+                                label: 'KATA SANDI BARU',
+                                controller: newPass,
+                                icon: Icons.lock_reset,
+                                obscure: true,
+                                hint: 'Password baru (min. 6 karakter)',
+                                validator: (v) => Validators.password(v,
+                                    fieldName: 'Kata sandi baru', minLength: 6),
+                              ),
+                          ] else ...[
+                            if (register)
+                              _field(
+                                label: 'NAMA LENGKAP',
+                                controller: name,
+                                icon: Icons.person_outline,
+                                hint: 'Nama Anda',
+                                keyboardType: TextInputType.name,
+                                validator: (v) => Validators.name(v,
+                                    fieldName: 'Nama lengkap'),
+                              ),
+                            _field(
+                              label: 'NOMOR WHATSAPP',
+                              controller: phone,
+                              icon: Icons.phone_outlined,
+                              keyboardType: TextInputType.phone,
+                              hint: 'Nomor WhatsApp Anda',
+                              inputFormatters: Validators.digitsOnly,
+                              validator: (v) => Validators.phone(v),
+                            ),
+                            if (!isForgotStep)
+                              _field(
+                                label: register ? 'KATA SANDI' : 'PASSWORD',
+                                controller: pass,
+                                icon: Icons.lock_outline,
+                                obscure: true,
+                                hint: 'Kata Sandi Anda',
+                                // Login: cukup wajib diisi (akun lama bisa < 6 karakter)
+                                validator: (v) => Validators.password(
+                                  v,
+                                  fieldName:
+                                      register ? 'Kata sandi' : 'Password',
+                                  minLength: register ? 6 : 0,
+                                ),
+                              ),
+
+                            // Tombol Lupa Password
+                            if (!register)
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: busy
+                                      ? null
+                                      : () {
+                                          setState(() {
+                                            isForgotStep = true;
+                                            error = null;
+                                            pass.clear();
+                                          });
+                                        },
+                                  child: const Text(
+                                    'Lupa Password?',
+                                    style: TextStyle(
+                                        color: gold,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                          ],
+
+                          // Error Container
+                          if (error != null)
+                            Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: Colors.redAccent
+                                        .withValues(alpha: 0.30)),
+                              ),
+                              child: Text(error!,
+                                  style: const TextStyle(
+                                      color: Colors.redAccent, fontSize: 12)),
+                            ),
+
+                          const SizedBox(height: 8),
+
+                          // Tombol Aksi Utama
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: busy
+                                  ? null
+                                  : (isOtpStep ? verifyAndSubmit : submit),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: green,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    busy
+                                        ? 'Memproses...'
+                                        : isOtpStep
+                                            ? (isForgotStep
+                                                ? 'Reset Password'
+                                                : 'Verifikasi & Daftar')
+                                            : (!register
+                                                ? 'Masuk Sekarang'
+                                                : 'Kirim Kode OTP'),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text('→',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16)),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -455,21 +550,37 @@ class _AuthPageState extends State<AuthPage> {
     required String label,
     required TextEditingController controller,
     required IconData icon,
+    required FormFieldValidator<String> validator,
     bool obscure = false,
     TextInputType? keyboardType,
     String? hint,
+    List<TextInputFormatter>? inputFormatters,
   }) {
+    OutlineInputBorder outline(Color color, [double width = 1]) =>
+        OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: color, width: width),
+        );
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: muted, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+          Text(label,
+              style: const TextStyle(
+                  color: muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5)),
           const SizedBox(height: 6),
-          TextField(
+          TextFormField(
             controller: controller,
             obscureText: obscure,
             keyboardType: keyboardType,
+            inputFormatters: inputFormatters,
+            validator: validator,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             style: const TextStyle(color: cream, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,
@@ -477,9 +588,13 @@ class _AuthPageState extends State<AuthPage> {
               prefixIcon: Icon(icon, color: gold, size: 20),
               filled: true,
               fillColor: brown,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: border)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: border)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: gold, width: 1.5)),
+              border: outline(border),
+              enabledBorder: outline(border),
+              focusedBorder: outline(gold, 1.5),
+              errorBorder: outline(Colors.redAccent),
+              focusedErrorBorder: outline(Colors.redAccent, 1.5),
+              errorStyle:
+                  const TextStyle(color: Colors.redAccent, fontSize: 11),
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
           ),

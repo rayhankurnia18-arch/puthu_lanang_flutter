@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../main.dart';
 import '../state/app_state.dart';
 import '../services/api_service.dart';
+import '../utils/validators.dart';
 
 class TakeawayPage extends StatefulWidget {
   final AppState state;
@@ -42,6 +43,7 @@ class _TakeawayPageState extends State<TakeawayPage> {
   final notesController = TextEditingController();
   final nameController = TextEditingController();
   final phoneController = TextEditingController();
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   bool busy = false;
 
   Map<String, dynamic>? queueEstimate;
@@ -116,6 +118,17 @@ class _TakeawayPageState extends State<TakeawayPage> {
       return;
     }
 
+    // Validasi form (nama & nomor pengambil wajib, catatan maks. 200 karakter)
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Periksa kembali data yang Anda isi.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     setState(() => busy = true);
 
     final customNotes = notesController.text.trim();
@@ -170,7 +183,9 @@ class _TakeawayPageState extends State<TakeawayPage> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: ListView(
+      body: Form(
+        key: _formKey,
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // --- 1. PILIHAN GERAI OUTLET ---
@@ -292,18 +307,14 @@ class _TakeawayPageState extends State<TakeawayPage> {
           // --- 4. CATATAN KHUSUS PESANAN ---
           const Text('✏️ Catatan Khusus Pesanan', style: TextStyle(color: Color(0xFFE69616), fontWeight: FontWeight.bold, fontSize: 14)),
           const SizedBox(height: 10),
-          TextField(
+          TextFormField(
             controller: notesController,
             maxLines: 3,
+            maxLength: 200,
+            validator: (v) => Validators.optionalText(v, maxLength: 200, fieldName: 'Catatan'),
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             style: const TextStyle(color: Colors.white, fontSize: 13),
-            decoration: InputDecoration(
-              hintText: 'Catatan tambahan untuk pesanan (opsional)',
-              hintStyle: const TextStyle(color: Colors.grey),
-              filled: true,
-              fillColor: brown2,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: border)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: border)),
-            ),
+            decoration: _inputDecoration('Catatan tambahan untuk pesanan (opsional)'),
           ),
 
           const SizedBox(height: 20),
@@ -311,31 +322,23 @@ class _TakeawayPageState extends State<TakeawayPage> {
           // --- 5. DATA PENGAMBIL PESANAN ---
           const Text('👤 Data Pengambil Pesanan', style: TextStyle(color: Color(0xFFE69616), fontWeight: FontWeight.bold, fontSize: 14)),
           const SizedBox(height: 10),
-          TextField(
+          TextFormField(
             controller: nameController,
+            keyboardType: TextInputType.name,
+            validator: (v) => Validators.name(v, fieldName: 'Nama pengambil'),
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             style: const TextStyle(color: Colors.white, fontSize: 13),
-            decoration: InputDecoration(
-              hintText: 'Nama Pengambil',
-              hintStyle: const TextStyle(color: Colors.grey),
-              filled: true,
-              fillColor: brown2,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: border)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: border)),
-            ),
+            decoration: _inputDecoration('Nama Pengambil'),
           ),
           const SizedBox(height: 10),
-          TextField(
+          TextFormField(
             controller: phoneController,
             keyboardType: TextInputType.phone,
+            inputFormatters: Validators.digitsOnly,
+            validator: (v) => Validators.phone(v, fieldName: 'Nomor telepon'),
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             style: const TextStyle(color: Colors.white, fontSize: 13),
-            decoration: InputDecoration(
-              hintText: 'Nomor Telepon',
-              hintStyle: const TextStyle(color: Colors.grey),
-              filled: true,
-              fillColor: brown2,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: border)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: border)),
-            ),
+            decoration: _inputDecoration('Nomor Telepon'),
           ),
 
           const SizedBox(height: 24),
@@ -468,7 +471,30 @@ class _TakeawayPageState extends State<TakeawayPage> {
           ),
           const SizedBox(height: 30),
         ],
+        ),
       ),
+    );
+  }
+
+  // Dekorasi input seragam (termasuk tampilan pesan error validasi)
+  InputDecoration _inputDecoration(String hint) {
+    OutlineInputBorder outline(Color color) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: color),
+        );
+
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Colors.grey),
+      filled: true,
+      fillColor: brown2,
+      counterStyle: const TextStyle(color: Colors.grey, fontSize: 10),
+      border: outline(border),
+      enabledBorder: outline(border),
+      focusedBorder: outline(gold),
+      errorBorder: outline(Colors.redAccent),
+      focusedErrorBorder: outline(Colors.redAccent),
+      errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 11),
     );
   }
 

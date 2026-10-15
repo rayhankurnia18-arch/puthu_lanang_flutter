@@ -124,12 +124,16 @@ class _StoryPageState extends State<StoryPage> {
               const SizedBox(height: 12),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Container(
+                child: Image.asset(
+                  'assets/images/api_kecil_malam_malang.png',
                   height: 150,
                   width: double.infinity,
-                  color: border,
-                  child: const Center(
-                    child: Icon(Icons.image, color: muted, size: 40),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 150,
+                    width: double.infinity,
+                    color: border,
+                    child: const Center(child: Icon(Icons.image, color: muted, size: 40)),
                   ),
                 ),
               ),
@@ -194,7 +198,18 @@ class _StoryPageState extends State<StoryPage> {
               const SizedBox(height: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: Container(height: 120, width: double.infinity, color: border, child: const Center(child: Icon(Icons.image, color: muted, size: 30))),
+                child: Image.asset(
+                  'assets/images/gerobak_pertama_celaket.png',
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 160,
+                    width: double.infinity,
+                    color: border,
+                    child: const Center(child: Icon(Icons.image, color: muted, size: 30)),
+                  ),
+                ),
               ),
               const SizedBox(height: 8),
               const Text('Gerobak Pertama di Celaket', style: TextStyle(color: cream, fontWeight: FontWeight.bold, fontSize: 14)),

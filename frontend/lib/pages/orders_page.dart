@@ -55,6 +55,35 @@ class _OrdersPageState extends State<OrdersPage> {
     return '${_two(date.day)}/${_two(date.month)}/${date.year}';
   }
 
+  // Warna & label badge mengikuti status dari database
+  (String, Color) _statusStyle(dynamic raw) {
+    final status = (raw?.toString().trim().isNotEmpty ?? false) ? raw.toString().trim() : 'Sedang Dikukus';
+    switch (status.toLowerCase()) {
+      case 'selesai':
+        return ('Selesai', green);
+      case 'sedang dikukus':
+        return ('Sedang Dikukus', gold);
+      default:
+        return (status, muted);
+    }
+  }
+
+  Widget _buildStatusBadge(dynamic rawStatus) {
+    final (label, color) = _statusStyle(rawStatus);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
   // ---------- UI ----------
 
   @override
@@ -152,7 +181,6 @@ class _OrdersPageState extends State<OrdersPage> {
         ? order['summary_items'].toString()
         : 'Pesanan Puthu Lanang';
     final total = int.tryParse('${order['total']}') ?? 0;
-    final status = order['status']?.toString();
     final notes = order['notes']?.toString() ?? '';
 
     return AppCard(
@@ -167,18 +195,7 @@ class _OrdersPageState extends State<OrdersPage> {
                   style: const TextStyle(color: gold, fontWeight: FontWeight.w900, fontSize: 13),
                 ),
               ),
-              if (status != null && status.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: green.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    status,
-                    style: const TextStyle(color: green, fontSize: 10, fontWeight: FontWeight.bold),
-                  ),
-                ),
+              _buildStatusBadge(order['status']),
             ],
           ),
           const SizedBox(height: 2),
